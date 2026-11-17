@@ -15,6 +15,8 @@ Use the [issue forms](https://github.com/SaikoAS/Warehouse-Studio/issues/new/cho
 
 ## Development and planning
 
+- [Public development Project](https://github.com/users/SaikoAS/projects/6)
+- [Verified Phase 1 setup and remaining owner actions](docs/phase-1-status.md)
 - [Agent working rules](AGENTS.md)
 - [Project fields, labels and workflow](docs/project-management.md)
 - [Codex Cloud setup and manual task handoff](docs/codex-cloud.md)
