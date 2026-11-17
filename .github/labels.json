@@ -1,0 +1,62 @@
+[
+  {
+    "name": "type:bug",
+    "color": "d73a4a",
+    "description": "A reproducible defect in existing behavior"
+  },
+  {
+    "name": "type:feature",
+    "color": "a2eeef",
+    "description": "A new user-facing capability"
+  },
+  {
+    "name": "type:enhancement",
+    "color": "84b6eb",
+    "description": "An improvement to an existing capability"
+  },
+  {
+    "name": "type:refactor",
+    "color": "d4c5f9",
+    "description": "Internal restructuring or technical maintenance"
+  },
+  {
+    "name": "type:docs",
+    "color": "0075ca",
+    "description": "Documentation or project governance"
+  },
+  {
+    "name": "area:governance",
+    "color": "5319e7",
+    "description": "Contribution process, planning and project policies"
+  },
+  {
+    "name": "area:ci",
+    "color": "1d76db",
+    "description": "Continuous integration and repository checks"
+  },
+  {
+    "name": "area:core",
+    "color": "0e8a16",
+    "description": "Domain model and core behavior; provisional area"
+  },
+  {
+    "name": "area:ui",
+    "color": "fbca04",
+    "description": "User interface and accessibility; provisional area"
+  },
+  {
+    "name": "area:data",
+    "color": "c2e0c6",
+    "description": "Data handling and import/export; provisional area"
+  },
+  {
+    "name": "good first issue",
+    "color": "7057ff",
+    "description": "Good for newcomers"
+  },
+  {
+    "name": "help wanted",
+    "color": "008672",
+    "description": "Extra attention is needed"
+  }
+]
