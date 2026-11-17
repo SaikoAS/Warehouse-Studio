@@ -5,7 +5,7 @@
 - Describe the task and result in simple words. Mark assumptions explicitly and give clear, structured answers.
 - Use English for public repository documentation; use the requester's language for conversation.
 - Inspect the current checkout, branch, repository instructions and Git status before changes. Preserve unrelated work.
-- Assumption: SaikoAS is initially the sole maintainer. Architecture and the v0.1.0 product scope are not yet decided.
+- Assumption: SaikoAS is initially the sole maintainer. Use the [v0.1.0 architecture decision](docs/adr/0001-v0.1.0-architecture.md) for the approved scope, stack and planned acceptance checks.
 
 ## Authority and task boundaries
 
@@ -26,7 +26,7 @@
 
 ## Validation
 
-There is no application stack, build or application test suite yet. Do not invent test commands or claim product acceptance.
+The v0.1.0 stack is approved. The application build and test suite are pending.
 
 For bootstrap documentation/configuration changes:
 
@@ -35,4 +35,4 @@ For bootstrap documentation/configuration changes:
 3. Run `git diff --check`.
 4. Inspect the actual PR checks and report their result separately from local checks.
 
-After the stack is approved, add meaningful build/lint/test commands in a scoped PR and update this file and CI together. Report any unperformed browser, device, security or business acceptance checks explicitly.
+When the runtime and application checks are implemented, document their commands here and update CI in the relevant PR. Report any unperformed browser, device, security or business acceptance checks explicitly.

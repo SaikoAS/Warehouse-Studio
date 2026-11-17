@@ -1,6 +1,6 @@
 # Contributing
 
-Thank you for helping build Warehouse Studio. The repository is in bootstrap: there is no runnable application, selected stack or application test suite yet.
+Thank you for helping build Warehouse Studio. The [v0.1.0 architecture decision](docs/adr/0001-v0.1.0-architecture.md) describes the approved stack and scope. The runnable application and its test suite are pending.
 
 ## Propose work
 
