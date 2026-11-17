@@ -1,11 +1,11 @@
 # Warehouse-Studio
 
-Warehouse Studio is an open-source warehouse software project in its planning and bootstrap phase. Product scope and technical architecture are still being defined; no runnable application or application test suite is available yet.
+Warehouse Studio is an open-source warehouse software project. The first prototype focuses on locally importing CSV data, preparing it through saved steps, and viewing the result. Application implementation is pending.
 
 ## Project status
 
-- Initial target: **v0.1.0 – Initial Prototype**. Its functional scope and acceptance criteria must be approved before implementation.
-- Technology stack: **not selected**. No installation or application test commands are claimed.
+- Initial target: **v0.1.0 – Initial Prototype**. See the [architecture decision and planned acceptance checks](docs/adr/0001-v0.1.0-architecture.md).
+- Stack: TypeScript, React and Vite for the interface. A local Python service and one SQLite file per project support offline use in Edge on Windows.
 - Development model: GitHub Issues and pull requests, with manually launched Codex tasks and human approval of every merge and release.
 - License: [MIT](LICENSE), retained from the initial repository.
 
@@ -23,4 +23,4 @@ Use the [issue forms](https://github.com/SaikoAS/Warehouse-Studio/issues/new/cho
 - [Versioning and release checklist](docs/releases.md)
 - [Phase 1 administration checklist](docs/phase-1-setup.md)
 
-Until an application stack is chosen, CI performs documentation/configuration checks only. These checks do not establish product correctness, security certification or browser acceptance.
+CI currently runs documentation and configuration checks. The runtime and application checks are planned as part of v0.1.0 implementation.
