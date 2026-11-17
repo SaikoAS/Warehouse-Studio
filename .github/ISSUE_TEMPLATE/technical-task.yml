@@ -1,0 +1,73 @@
+name: Technical Task
+description: Specify maintenance, investigation, documentation or CI work.
+title: '[Task]: '
+body:
+- type: markdown
+  attributes:
+    value: Use synthetic data only. Do not post credentials, confidential warehouse data or vulnerability
+      details. Read SECURITY.md for private reporting. Submission or Project status does not start a coding
+      agent.
+- type: textarea
+  id: context
+  attributes:
+    label: Technical context
+    description: Describe the reason and relevant files. Do not assume an unapproved stack.
+    placeholder: 'Context: ...
+
+      Relevant files: ...
+
+      Decisions needed: ...'
+  validations:
+    required: true
+- type: textarea
+  id: goal
+  attributes:
+    label: Goal
+    description: What outcome should this task achieve?
+    placeholder: Describe one concrete outcome.
+  validations:
+    required: true
+- type: textarea
+  id: scope
+  attributes:
+    label: Scope
+    description: Define allowed changes and explicit exclusions.
+    placeholder: 'In scope: ...
+
+      Out of scope: ...'
+  validations:
+    required: true
+- type: textarea
+  id: acceptance
+  attributes:
+    label: Acceptance Criteria
+    description: Provide observable pass/fail criteria.
+    placeholder: '- [ ] ...'
+  validations:
+    required: true
+- type: textarea
+  id: dependencies
+  attributes:
+    label: Dependencies
+    description: Link prerequisite issues or decisions; write None if there are none.
+    placeholder: 'None, or #123 and the required decision.'
+  validations:
+    required: true
+- type: textarea
+  id: validation
+  attributes:
+    label: Validation
+    description: Specify checks and evidence. If no application tests exist, say so and propose appropriate
+      verification.
+    placeholder: Commands, scenarios and expected results; manual acceptance still needed.
+  validations:
+    required: true
+- type: textarea
+  id: done
+  attributes:
+    label: Definition of Done
+    description: Define the complete handoff, including evidence and maintainer review.
+    placeholder: Acceptance criteria met, checks reported, scoped PR linked; maintainer merge decision
+      pending.
+  validations:
+    required: true
