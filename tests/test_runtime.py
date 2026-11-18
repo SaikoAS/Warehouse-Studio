@@ -40,9 +40,8 @@ class RuntimeTests(unittest.TestCase):
         folder = tempfile.TemporaryDirectory(prefix="Warehouse Studio ")
         self.addCleanup(folder.cleanup)
         self.app = Path(folder.name)
-        (self.app / "runtime").mkdir()
+        shutil.copytree(ROOT / "runtime", self.app / "runtime", ignore=shutil.ignore_patterns("__pycache__"))
         self.script = self.app / "runtime/server.py"
-        shutil.copyfile(ROOT / "runtime/server.py", self.script)
         shutil.copytree(ROOT / "dist", self.app / "dist")
         shutil.copyfile(ROOT / START, self.app / START)
 
