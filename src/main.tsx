@@ -1,7 +1,7 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createRoot } from "react-dom/client";
 import { CsvPreparation } from "./csv-preparation";
-import { request, useAction } from "./local-service";
+import { actionError, request, useAction } from "./local-service";
 import "./studio.css";
 
 interface ProjectEntry {
@@ -24,9 +24,11 @@ interface Project {
 function Launcher() {
   const [folder, setFolder] = useState<Folder | null>(null);
   const [folderPath, setFolderPath] = useState("");
+  const [browsing, setBrowsing] = useState(false);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
-  const { busy, error, run } = useAction();
+  const { busy, error, run, setError } = useAction();
+  const acceptPickerResult = useRef(false);
 
   function showFolder(picked: Folder) {
     setFolder(picked);
@@ -35,22 +37,34 @@ function Launcher() {
     setName("");
   }
 
-  function selectFolder(event: FormEvent) {
-    event.preventDefault();
-    void run(async () => showFolder(await request<Folder>("select-folder", { path: folderPath })));
+  function runLauncherAction(action: () => Promise<void>) {
+    acceptPickerResult.current = false;
+    void run(action);
   }
 
-  function browse() {
-    void run(async () => {
+  function selectFolder(event: FormEvent) {
+    event.preventDefault();
+    runLauncherAction(async () => showFolder(await request<Folder>("select-folder", { path: folderPath })));
+  }
+
+  async function browse() {
+    acceptPickerResult.current = true;
+    setBrowsing(true);
+    setError("");
+    try {
       const picked = await request<Folder | null>("choose-folder");
-      if (picked) showFolder(picked);
-    });
+      if (acceptPickerResult.current && picked) showFolder(picked);
+    } catch (cause) {
+      if (acceptPickerResult.current) setError(actionError(cause));
+    } finally {
+      setBrowsing(false);
+    }
   }
 
   function create(event: FormEvent) {
     event.preventDefault();
     if (!folder) return;
-    void run(async () => {
+    runLauncherAction(async () => {
       setFolder(await request<Folder>("create", { key: folder.folder, name }));
       setCreating(false);
       setName("");
@@ -65,11 +79,16 @@ function Launcher() {
       <form onSubmit={selectFolder}>
         <label htmlFor="folder-path">Project folder path</label>
         <input id="folder-path" required disabled={busy} value={folderPath} spellCheck={false}
-          aria-describedby="folder-path-hint" onChange={event => setFolderPath(event.target.value)} />
+          aria-describedby="folder-path-hint" onChange={event => {
+            acceptPickerResult.current = false;
+            setFolderPath(event.target.value);
+          }} />
         <small id="folder-path-hint">Paste an absolute local path from File Explorer.</small>
         <div className="actions">
           <button disabled={busy || !folderPath.trim()}>Use folder</button>
-          <button type="button" className="secondary" disabled={busy} onClick={browse}>Browse (optional)</button>
+          <button type="button" className="secondary" disabled={busy || browsing} onClick={browse}>
+            {browsing ? "Waiting for folder picker…" : "Browse (optional)"}
+          </button>
         </div>
       </form>
     </section>
@@ -79,9 +98,12 @@ function Launcher() {
           <p className="path">{folder.path}</p>
         </div>
         <div className="actions">
-          <button className="secondary" disabled={busy} onClick={() => void run(async () =>
+          <button className="secondary" disabled={busy} onClick={() => runLauncherAction(async () =>
             setFolder(await request<Folder>("list", { key: folder.folder })))}>Refresh</button>
-          <button disabled={busy || creating} onClick={() => setCreating(true)}>New project</button>
+          <button disabled={busy || creating} onClick={() => {
+            acceptPickerResult.current = false;
+            setCreating(true);
+          }}>New project</button>
         </div>
       </div>
       {creating && <form onSubmit={create}>
@@ -96,7 +118,7 @@ function Launcher() {
       <ul>{folder.projects.map(item => <li key={item.key} className="row">
         <div><strong>{item.name}</strong><small>{item.file}</small></div>
         <button className="secondary" aria-label={`Open project ${item.name}`} disabled={busy}
-          onClick={() => void run(async () => { await request("open", { key: item.key }); })}>Open project</button>
+          onClick={() => runLauncherAction(async () => { await request("open", { key: item.key }); })}>Open project</button>
       </li>)}</ul>
       {folder.warnings.map(warning => <p role="alert" key={warning}>{warning}</p>)}
     </section>}

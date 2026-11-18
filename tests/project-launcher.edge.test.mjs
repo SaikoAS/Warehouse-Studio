@@ -4,6 +4,41 @@ import { join } from "node:path";
 import test from "node:test";
 import { withEdgeTestService } from "./edge-test-service.mjs";
 
+test("Edge keeps a manual folder selection when the optional picker responds late", () =>
+  withEdgeTestService(["--launcher"], async ({ directory, url, context }) => {
+    const launcher = await context.newPage();
+    const pickerReply = Promise.withResolvers();
+    const stalePath = join(directory, "Folder from delayed picker");
+    await launcher.route("**/api/choose-folder", async route => {
+      await pickerReply.promise;
+      await route.fulfill({ json: { folder: "stale", path: stalePath, projects: [], warnings: [] } });
+    });
+    await launcher.goto(url);
+    const browse = launcher.getByRole("button", { name: "Browse (optional)", exact: true });
+    const pathInput = launcher.getByLabel("Project folder path");
+    const existingProject = launcher.getByRole("button", { name: "Open project Existing local project" });
+
+    try {
+      const requestStarted = launcher.waitForRequest("**/api/choose-folder");
+      await browse.click();
+      await requestStarted;
+      assert.equal(await pathInput.isEnabled(), true);
+      await pathInput.fill(`"${directory}"`);
+      await launcher.getByRole("button", { name: "Use folder" }).click();
+      await existingProject.waitFor();
+      const selectedPath = await pathInput.inputValue();
+
+      pickerReply.resolve();
+      await browse.waitFor();
+      assert.equal(await browse.isEnabled(), true);
+      assert.equal(await pathInput.inputValue(), selectedPath);
+      assert.equal(await existingProject.isVisible(), true);
+      assert.equal(await launcher.getByText(stalePath, { exact: true }).count(), 0);
+    } finally {
+      pickerReply.resolve();
+    }
+  }));
+
 test("Edge opens projects and saves a CSV using manual folder selection when Tk is unavailable", () =>
   withEdgeTestService(["--launcher"], async ({ directory, url, nextUrl, context }) => {
     const launcher = await context.newPage();
