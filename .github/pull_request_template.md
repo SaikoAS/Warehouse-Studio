@@ -12,7 +12,7 @@ List changes, exclusions, assumptions and any decision that needs maintainer inp
 - [ ] Whitespace: `git diff --check`
 - [ ] Actual GitHub CI result inspected
 
-State exact checks and results. There is no application test suite yet. Record unperformed checks and any browser/device/business acceptance still needed.
+State exact checks and results. For application changes include the frontend build, type check and runtime smoke tests. Record unperformed checks and any browser/device/business acceptance still needed.
 
 ## Handoff
 
