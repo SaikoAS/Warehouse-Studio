@@ -1,0 +1,5 @@
+Article;Kind;Quantity;Note
+0007;Keep;12,50;"Synthetic; ""quoted"""
+0019;Drop;not checked;Filtered synthetic row
+0042;Keep;-0,075;"Two
+fixture lines"

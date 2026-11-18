@@ -116,21 +116,25 @@ class ProjectStore:
             temporary.unlink(missing_ok=True)
         return self.listing(folder)
 
-    def project(self, key, *, update=None):
+    @contextmanager
+    def open_database(self, key, *, write=False):
         reference = self.projects.get(key)
         if reference is None:
             raise ValueError("This project window has expired. Reopen the project from the launcher.")
         path, identity = reference
-        with database(path, "rw" if update is not None else "ro") as db, db:
-            if update is not None:
-                db.execute("BEGIN IMMEDIATE")
+        with database(path, "rw" if write else "ro") as db, db:
+            db.execute("BEGIN IMMEDIATE" if write else "BEGIN")
             row = metadata(db)
             if row["id"] != identity:
                 raise ValueError("The project file was replaced. Refresh the launcher and reopen the project.")
+            yield db, row, path.name
+
+    def project(self, key, *, update=None):
+        with self.open_database(key, write=update is not None) as (db, row, filename):
             if update is not None:
                 name = project_name(update.get("name"))
                 if type(update.get("revision")) is not int or row["revision"] != update["revision"]:
                     raise ValueError("Another window saved this project. Reload the saved name before editing again.")
                 db.execute("UPDATE project SET name = ?, revision = revision + 1 WHERE singleton = 1", (name,))
                 row = metadata(db)
-        return {"name": row["name"], "revision": row["revision"], "file": path.name}
+        return {"name": row["name"], "revision": row["revision"], "file": filename}

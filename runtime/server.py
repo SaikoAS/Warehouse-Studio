@@ -10,6 +10,12 @@ import socket
 import subprocess
 import sys
 
+# The Windows launcher uses -I, which excludes the script directory.
+if __name__ == "__main__":
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from runtime import preparation
+
 HOST = "127.0.0.1"
 PORT = 8765
 DIST = Path(__file__).resolve().parents[1] / "dist"
@@ -17,6 +23,17 @@ ASSETS = {
     "index.html": "text/html; charset=utf-8",
     "assets/studio.js": "text/javascript; charset=utf-8",
     "assets/index.css": "text/css; charset=utf-8",
+}
+PREPARATION_REQUESTS = {
+    "/api/preparation": (preparation.state, False),
+    "/api/csv-import": (preparation.import_source, True),
+    "/api/csv-page": (preparation.page, False),
+    "/api/csv-apply": (preparation.apply, True),
+}
+BODY_LIMITS = {
+    "/api/csv-import": 4 * ((preparation.MAX_SOURCE_BYTES + 2) // 3) + 65_536,
+    "/api/csv-page": 512 * 1024,
+    "/api/csv-apply": 512 * 1024,
 }
 
 
@@ -56,7 +73,7 @@ class AssetHandler(BaseHTTPRequestHandler):
             return
         try:
             length = int(self.headers.get("Content-Length", "0"))
-            if not 0 < length <= 4096:
+            if not 0 < length <= BODY_LIMITS.get(self.path, 4096):
                 raise ValueError("Invalid request size.")
             data = json.loads(self.rfile.read(length))
             if not isinstance(data, dict):
@@ -72,6 +89,10 @@ class AssetHandler(BaseHTTPRequestHandler):
         key = data.get("key", "")
         if not isinstance(key, str):
             raise ValueError("Invalid project reference.")
+        if self.path in PREPARATION_REQUESTS:
+            operation, write = PREPARATION_REQUESTS[self.path]
+            with store.open_database(key, write=write) as (db, _, _):
+                return operation(db, data)
         match self.path:
             case "/api/choose-folder":
                 folder = choose_folder()
@@ -98,7 +119,11 @@ class AssetHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(content)))
         self.end_headers()
-        self.wfile.write(content)
+        try:
+            self.wfile.write(content)
+        except ConnectionError:
+            # Switching steps can cancel an in-flight preview.
+            pass
 
     def log_message(self, format, *args):
         # A launcher can detach its output pipe while the browser is still loading.
@@ -173,9 +198,7 @@ def main():
         parser.error("choose a port between 0 and 65535")
     try:
         versions = check_python()
-        # The Windows launcher uses -I, which excludes the script directory.
-        sys.path.insert(0, str(Path(__file__).resolve().parent))
-        from projects import ProjectStore
+        from runtime.projects import ProjectStore
 
         handler = partial(AssetHandler, assets=read_assets(DIST))
         try:

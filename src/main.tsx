@@ -1,5 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { createRoot } from "react-dom/client";
+import { CsvPreparation } from "./csv-preparation";
+import { request, useAction } from "./local-service";
 import "./studio.css";
 
 interface ProjectEntry {
@@ -17,34 +19,6 @@ interface Project {
   name: string;
   revision: number;
   file: string;
-}
-
-async function request<T>(action: string, data: object = {}): Promise<T> {
-  const response = await fetch("/api/" + action, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || "The request failed.");
-  return result;
-}
-
-function useAction() {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  async function run(action: () => Promise<void>) {
-    setBusy(true);
-    setError("");
-    try {
-      await action();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not reach the local service.");
-    } finally {
-      setBusy(false);
-    }
-  }
-  return { busy, error, run };
 }
 
 function Launcher() {
@@ -161,6 +135,7 @@ function ProjectWindow({ projectKey }: { projectKey: string }) {
       {error && <button className="secondary" disabled={busy} onClick={reload}>Reload saved name</button>}
       {notice && <p role="status">{notice}</p>}
     </section>
+    {project && <CsvPreparation key={projectKey} projectKey={projectKey} />}
   </main>;
 }
 
