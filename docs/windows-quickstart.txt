@@ -1,0 +1,31 @@
+Warehouse Studio v0.1.0
+=======================
+
+Use Windows with Microsoft Edge and an approved Python 3.13 or newer with
+standard-library sqlite3 already available. Extract the whole ZIP into a local
+folder you can write to. Start from the extracted folder.
+
+1. Double-click Start Warehouse Studio.cmd. The launcher opens in Edge.
+2. In File Explorer, copy the absolute path to a writable local data folder
+   outside the extracted application. Paste it into Project folder path and
+   select Use folder. The optional Browse button uses Tk when available.
+3. Create or open a project. Each project opens in its own Edge window and saves
+   its data into a .warehouse.sqlite3 file in the selected data folder.
+4. Import a UTF-8, semicolon-delimited CSV. Add preparation steps and use Apply
+   to save the result. Reopen the project to inspect the saved result.
+
+Keep the start window open while using Warehouse Studio. Press Ctrl+C there to
+stop the local service.
+
+The scripts find python.exe through your user environment. If your approved
+installation needs an explicit choice, set WAREHOUSE_STUDIO_PYTHON to the full
+path of its python.exe in your environment before starting.
+
+Optional Start menu shortcut
+----------------------------
+
+Double-click Create Warehouse Studio Shortcut.cmd to add Warehouse Studio to
+your own Start menu. The shortcut starts this extracted copy. Run Remove
+Warehouse Studio Shortcut.cmd from the same folder before moving or removing
+it. This removes the shortcut and leaves the application and project files in
+place. Windows must allow write access to your own Start menu Programs folder.

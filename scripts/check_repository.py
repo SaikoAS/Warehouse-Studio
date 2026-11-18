@@ -92,7 +92,8 @@ def main():
         for step in job["steps"]:
             if "uses" in step:
                 action, _, revision = step["uses"].partition("@")
-                require(action in {"actions/checkout", "actions/setup-node", "actions/setup-python"}, "Unexpected CI action")
+                require(action in {"actions/checkout", "actions/setup-node", "actions/setup-python",
+                                   "actions/upload-artifact"}, "Unexpected CI action")
                 require(re.fullmatch(r"[0-9a-f]{40}", revision), "Pin the reviewed action")
                 if action == "actions/checkout":
                     require(step.get("with", {}).get("persist-credentials") == "false", "Do not persist credentials")
