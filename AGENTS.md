@@ -26,7 +26,7 @@
 
 ## Validation
 
-The v0.1.0 stack is approved. The application build and test suite are pending.
+For application changes, use Node 24 and Python 3.13 or newer. Run `npm ci`, `npm run typecheck`, `npm run build` and `python -m unittest discover -s tests -v` from the repository root. Use Windows to include the start-script test.
 
 For bootstrap documentation/configuration changes:
 
@@ -35,4 +35,4 @@ For bootstrap documentation/configuration changes:
 3. Run `git diff --check`.
 4. Inspect the actual PR checks and report their result separately from local checks.
 
-When the runtime and application checks are implemented, document their commands here and update CI in the relevant PR. Report any unperformed browser, device, security or business acceptance checks explicitly.
+Report the observed Windows/Edge startup separately from the build and runtime tests. Record outstanding browser, device, security or business acceptance checks explicitly.

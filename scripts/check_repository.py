@@ -87,12 +87,15 @@ def main():
     workflow = configs[".github/workflows/repository-checks.yml"]
     require(set(workflow["on"]) == {"pull_request", "push"}, "Unexpected workflow trigger")
     require(workflow["permissions"] == {"contents": "read"}, "Workflow must be read-only")
-    require(set(workflow["jobs"]) == {"docs-config"}, "Unexpected job; review new CI deliberately")
-    steps = workflow["jobs"]["docs-config"]["steps"]
-    for step in steps:
-        if "uses" in step:
-            require(re.fullmatch(r"actions/checkout@[0-9a-f]{40}", step["uses"]), "Pin the reviewed checkout action")
-            require(step.get("with", {}).get("persist-credentials") == "false", "Do not persist credentials")
+    require(set(workflow["jobs"]) == {"docs-config", "windows-app"}, "Unexpected CI job")
+    for job in workflow["jobs"].values():
+        for step in job["steps"]:
+            if "uses" in step:
+                action, _, revision = step["uses"].partition("@")
+                require(action in {"actions/checkout", "actions/setup-node", "actions/setup-python"}, "Unexpected CI action")
+                require(re.fullmatch(r"[0-9a-f]{40}", revision), "Pin the reviewed action")
+                if action == "actions/checkout":
+                    require(step.get("with", {}).get("persist-credentials") == "false", "Do not persist credentials")
     require("secrets." not in (ROOT / ".github/workflows/repository-checks.yml").read_text(encoding="utf-8"), "Bootstrap needs no secrets")
     print(f"PASS: {len(paths)} repository files inspected; text, local file links, YAML/JSON, task forms, labels and baseline workflow checks.")
     print("Not application tests; external links, Markdown anchors and live GitHub/Codex settings are not checked.")
