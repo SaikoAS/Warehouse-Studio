@@ -25,6 +25,7 @@ interface Source {
 
 interface SavedPreparation {
   maxBytes: number;
+  maxCellLength: number;
   maxSteps: number;
   source: Source | null;
 }
@@ -38,6 +39,15 @@ interface Page {
 
 const operations = { rename: "Rename column", filter: "Filter rows", convert: "Convert type" } as const;
 const viewLabels = { source: "Source", preview: "Step preview", result: "Saved result" } as const;
+
+function exceedsCharacterLimit(value: string, limit: number) {
+  let count = 0;
+  for (const character of value) {
+    count += 1;
+    if (count > limit) return true;
+  }
+  return false;
+}
 
 function newStep(operation: Step["operation"], column: number): Step {
   switch (operation) {
@@ -95,9 +105,10 @@ function ImportForm({ busy, maxBytes, onImport }: {
   </form>;
 }
 
-function StepFields({ step, columns, onChange }: {
+function StepFields({ step, columns, invalidFilter, onChange }: {
   step: Step;
   columns: Column[];
+  invalidFilter: boolean;
   onChange: (step: Step) => void;
 }) {
   return <>
@@ -124,7 +135,8 @@ function StepFields({ step, columns, onChange }: {
         <option value="remove">Remove exact matches</option>
       </select>
       <label htmlFor="filter-value">Match value</label>
-      <textarea id="filter-value" rows={2} maxLength={4096} value={step.value}
+      <textarea id="filter-value" rows={2} value={step.value} aria-invalid={invalidFilter}
+        aria-describedby={invalidFilter ? "invalid-filter" : undefined}
         onChange={event => onChange({ ...step, value: event.target.value })} />
     </>}
     {step.operation === "convert" && <>
@@ -167,7 +179,9 @@ function DataTable({ projectKey, revision, view, steps, selected }: {
     const timer = window.setTimeout(async () => {
       try {
         const page = await request<Page>("csv-page", {
-          key: projectKey, revision, view, steps, through: selected, offset,
+          key: projectKey, revision, view,
+          steps: selected === undefined ? undefined : steps?.slice(0, selected + 1),
+          through: selected, offset,
         }, controller.signal);
         if (!controller.signal.aborted) setData({ page });
       } catch (cause) {
@@ -216,6 +230,9 @@ export function CsvPreparation({ projectKey }: { projectKey: string }) {
   const { busy, error, run } = useAction();
   const source = saved?.source;
   const currentStep = selected === null ? null : steps[selected];
+  const invalidFilter = saved ? steps.findIndex(step =>
+    step.operation === "filter" && exceedsCharacterLimit(step.value, saved.maxCellLength)) : -1;
+  const previewBlocked = view === "preview" && selected !== null && invalidFilter >= 0 && invalidFilter <= selected;
 
   function show(persisted: SavedPreparation) {
     setSaved(persisted);
@@ -297,10 +314,10 @@ export function CsvPreparation({ projectKey }: { projectKey: string }) {
             setSteps([...steps, newStep("rename", 0)]);
             select(steps.length);
           }}>Add step</button>
-          <button type="button" onClick={apply}>Apply</button>
+          <button type="button" disabled={invalidFilter >= 0} onClick={apply}>Apply</button>
         </div>
         {selected !== null && currentStep && <div className="step-fields">
-          <StepFields step={currentStep} columns={source.columns} onChange={step => {
+          <StepFields step={currentStep} columns={source.columns} invalidFilter={invalidFilter === selected} onChange={step => {
             setSteps(steps.map((previous, index) => index === selected ? step : previous));
             select(selected);
           }} />
@@ -312,14 +329,17 @@ export function CsvPreparation({ projectKey }: { projectKey: string }) {
             <button type="button" className="secondary" onClick={() => remove(selected)}>Remove step</button>
           </div>
         </div>}
+        {invalidFilter >= 0 && <p id="invalid-filter" role="alert">
+          Step {invalidFilter + 1}: enter a match value of up to {saved.maxCellLength.toLocaleString()} characters.
+        </p>}
       </fieldset>
       <div className="actions table-views" aria-label="Data view" role="group">
         {(Object.keys(viewLabels) as View[]).map(option => <button key={option} type="button" className="secondary"
           aria-pressed={view === option} disabled={(option === "preview" && selected === null) || (option === "result" && !source.hasResult)}
           onClick={() => setView(option)}>{viewLabels[option]}</button>)}
       </div>
-      <DataTable key={`${view}:${source.revision}`} projectKey={projectKey} revision={source.revision} view={view}
-        steps={view === "preview" ? steps : undefined} selected={view === "preview" ? selected ?? undefined : undefined} />
+      {!previewBlocked && <DataTable key={`${view}:${source.revision}`} projectKey={projectKey} revision={source.revision} view={view}
+        steps={view === "preview" ? steps : undefined} selected={view === "preview" ? selected ?? undefined : undefined} />}
     </>}
   </section>;
 }

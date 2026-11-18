@@ -159,6 +159,25 @@ class PreparationTests(unittest.TestCase):
         self.assertEqual(self.upload(VALID, key="unknown")[0], 400)
         self.assertIsNone(self.ok("preparation")["source"])
 
+    def test_multiline_filters_match_browser_newlines_without_rewriting_values(self):
+        data = b'Article;Note\r\n0007;"Alpha\r\nBeta"\r\n0011;"Alpha\nBeta"\r\n0015;"Alpha\rBeta"\r\n0020;"Alpha\r\nBeta "\r\n'
+        self.assertEqual(self.upload(data)[0], 200)
+        steps = [{**FILTER, "value": "Alpha\nBeta"}]
+        preview_request = {"view": "preview", "through": 0, "revision": 1, "steps": steps}
+        rows = self.ok("csv-page", preview_request)["rows"]
+        self.assertEqual([row[1] for row in rows], [
+            ["0007", "Alpha\r\nBeta"], ["0011", "Alpha\nBeta"], ["0015", "Alpha\rBeta"],
+        ])
+        self.ok("csv-apply", {"steps": steps, "revision": 1})
+        self.assertEqual(self.ok("csv-page", {"view": "result", "revision": 2})["rows"], rows)
+
+        steps = [{**steps[0], "mode": "remove"}]
+        remaining = self.ok("csv-page", {**preview_request, "revision": 2, "steps": steps})["rows"]
+        self.assertEqual(remaining, [[8, ["0020", "Alpha\r\nBeta "]]])
+        self.ok("csv-apply", {"steps": steps, "revision": 2})
+        self.assertEqual(self.ok("csv-page", {"view": "result", "revision": 3})["rows"], remaining)
+        self.assertEqual(self.stored_workflow()[0], data)
+
     def test_simultaneous_applies_cannot_overwrite_newer_revision(self):
         self.assertEqual(self.upload(VALID)[0], 200)
 

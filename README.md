@@ -20,7 +20,7 @@ Each project window can edit and save its project's name. The filename stays sta
 2. Add, edit, reorder or remove steps. Select a step to preview the output through that step. You can rename a column, keep or remove rows by exact value, and convert columns to Text or Decimal. The column selector uses the source names so steps still refer to the same column after you reorder them.
 3. Select **Apply** to save the steps and result together. A conversion error points to the original CSV line and column. If Apply fails, **Saved result** still shows the last valid result. Reopen the project to see the saved steps and result, or select **Apply** again to rerun them on the original source.
 
-The prototype supports one CSV per project, up to **1 MiB (1,048,576 bytes)**, 64 columns, 4,096 characters per data field, 120 characters per column name, and 20 steps. All data records must have the same number of fields. A decimal step requires a locale. Choose German (Germany) for `12,50` or English (United States) for `12.50`. Use signed or unsigned digits with an optional fractional part, without digit grouping. Results preserve exact decimal digits and use a decimal point. Exact filters compare the current cell value at their position in the step list.
+The prototype supports one CSV per project, up to **1 MiB (1,048,576 bytes)**, 64 columns, 4,096 Unicode code points per data field or filter value, 120 characters per column name, and 20 steps. All data records must have the same number of fields. A decimal step requires a locale. Choose German (Germany) for `12,50` or English (United States) for `12.50`. Use signed or unsigned digits with an optional fractional part, without digit grouping. Results preserve exact decimal digits and use a decimal point. Exact filters compare the current cell value at their position in the step list. For comparisons, CRLF, CR, and LF are equivalent line breaks. Stored and displayed cell values retain their original line endings.
 
 The [synthetic CSV examples](tests/fixtures/README.md) include the expected prepared rows and an error case.
 
@@ -34,6 +34,8 @@ npm run typecheck
 npm run build
 python -m unittest discover -s tests -v
 ```
+
+With Microsoft Edge installed, run `npm run test:edge` after the build to exercise the CSV filter in a separate headless browser profile.
 
 Vite writes the interface and its local JavaScript and stylesheet to `dist`. The Python service exposes only those three build files. For a browser-free check, run `python -I runtime/server.py --no-browser`.
 

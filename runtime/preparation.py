@@ -67,6 +67,11 @@ def read_csv(source, custom_headers):
     return {"columns": [{"name": name, "type": "text"} for name in names], "rows": parsed}
 
 
+def filter_text(value):
+    # The HTML textarea presents all line breaks as LF. Apply that rule only to comparisons.
+    return value.replace("\r\n", "\n").replace("\r", "\n")
+
+
 def execute_steps(table, steps, through=None):
     if not isinstance(steps, list) or len(steps) > MAX_STEPS:
         raise ValueError(f"Use at most {MAX_STEPS} preparation steps.")
@@ -95,7 +100,8 @@ def execute_steps(table, steps, through=None):
                 if not isinstance(value, str) or len(value) > MAX_CELL_LENGTH or mode not in ("keep", "remove"):
                     raise ValueError(f"Step {number}: choose a filter and enter a value of up to {MAX_CELL_LENGTH} characters.")
                 keep_matches = mode == "keep"
-                rows = [(line, cells) for line, cells in rows if (cells[index] == value) == keep_matches]
+                expected = filter_text(value)
+                rows = [(line, cells) for line, cells in rows if (filter_text(cells[index]) == expected) == keep_matches]
             case "convert":
                 target = step.get("target")
                 if target not in ("text", "decimal"):
@@ -130,7 +136,7 @@ def state(db, _request=None):
         "columns": json.loads(row["columns"]), "steps": json.loads(row["steps"]),
         "hasResult": bool(row["has_result"]),
     }
-    return {"maxBytes": MAX_SOURCE_BYTES, "maxSteps": MAX_STEPS, "source": source}
+    return {"maxBytes": MAX_SOURCE_BYTES, "maxCellLength": MAX_CELL_LENGTH, "maxSteps": MAX_STEPS, "source": source}
 
 
 def import_source(db, request):
