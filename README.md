@@ -1,14 +1,20 @@
 # Warehouse-Studio
 
-Warehouse Studio is an open-source warehouse software project. The local application shell runs in Microsoft Edge on Windows. Project selection and CSV preparation are planned for the first prototype.
+Warehouse Studio is an open-source warehouse software project. Its Windows launcher opens local SQLite projects in dedicated Microsoft Edge windows. CSV preparation is planned for the first prototype.
 
 ## Start on Windows
 
-Double-click **Start Warehouse Studio.cmd** in a writable folder containing the script, `runtime/server.py` and the complete `dist` build. Edge opens the interface at `http://127.0.0.1:8765/`. Keep the start window open while working. Press Ctrl+C there to stop the service.
+Double-click **Start Warehouse Studio.cmd** in a writable folder containing the script, the complete `runtime` folder and the `dist` build. Edge opens the launcher at `http://127.0.0.1:8765/`. Keep the start window open while working. Press Ctrl+C there to stop the service.
 
 Use an existing Python 3.13 or newer with the standard-library `sqlite3` module. The Windows 11 startup check used Python 3.13.14 with SQLite 3.50.4. The script uses `python.exe` from your environment. To select another approved installation, set `WAREHOUSE_STUDIO_PYTHON` to its full executable path. If port 8765 is occupied, close the previous service or run `python -I runtime/server.py --port 8766` from the application folder with a free port.
 
-### Build from source
+### Work with projects
+
+With the build available, **Choose folder** opens the Windows directory picker through Python's standard Tk module. Select a writable local data folder outside the application folder. **New project** creates a versioned `.warehouse.sqlite3` file. **Open project** opens a separate Edge window. The launcher can switch folders while existing project windows continue using their original files.
+
+Each project window can edit and save its project's name. The filename stays stable when the display name changes. Use **Refresh** in the launcher to see changes made in another window. Opening the same project twice creates two windows on the same database. If one window saves first, the other must reload the saved name before it can save a new change. After restarting the service, select the data folder again and reopen projects from the launcher.
+
+### Build and test
 
 With Node 24, run these commands from the repository root. Only development and CI need npm.
 

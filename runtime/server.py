@@ -3,6 +3,7 @@
 import argparse
 from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
 import os
 from pathlib import Path
 import socket
@@ -43,6 +44,61 @@ class AssetHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         self.serve_asset()
+
+    def do_POST(self):
+        host = f"{HOST}:{self.server.server_port}"
+        origin = f"http://{host}"
+        if self.headers.get("Host") != host or self.headers.get("Origin") != origin:
+            self.send_error(403)
+            return
+        if self.headers.get_content_type() != "application/json":
+            self.send_error(415)
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if not 0 < length <= 4096:
+                raise ValueError("Invalid request size.")
+            data = json.loads(self.rfile.read(length))
+            if not isinstance(data, dict):
+                raise ValueError("Expected a project request.")
+            result = self.project_request(data, origin)
+        except (ValueError, OSError, RuntimeError) as error:
+            self.send_json(400, {"error": str(error)})
+        else:
+            self.send_json(200, result)
+
+    def project_request(self, data, origin):
+        store = self.server.projects
+        key = data.get("key", "")
+        if not isinstance(key, str):
+            raise ValueError("Invalid project reference.")
+        match self.path:
+            case "/api/choose-folder":
+                folder = choose_folder()
+                return store.choose(folder) if folder else None
+            case "/api/list":
+                return store.listing(key)
+            case "/api/create":
+                return store.create(key, data.get("name"))
+            case "/api/open":
+                store.project(key)
+                open_edge(f"{origin}/#project={key}")
+                return None
+            case "/api/project":
+                return store.project(key)
+            case "/api/save":
+                return store.project(key, update=data)
+            case _:
+                raise ValueError("Unknown project operation.")
+
+    def send_json(self, status, payload):
+        content = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(content)))
+        self.end_headers()
+        self.wfile.write(content)
 
     def log_message(self, format, *args):
         # A launcher can detach its output pipe while the browser is still loading.
@@ -100,6 +156,14 @@ def open_edge(url):
     raise RuntimeError("Microsoft Edge was not found. Check the installed Edge application and try again.")
 
 
+def choose_folder():
+    picker = Path(__file__).with_name("choose_folder.py")
+    result = subprocess.run([sys.executable, "-I", str(picker)], capture_output=True)
+    if result.returncode:
+        raise RuntimeError("The Windows folder picker could not open. Check that your Python installation includes Tk.")
+    return json.loads(result.stdout)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--no-browser", action="store_true", help="serve the interface without launching Edge")
@@ -109,12 +173,17 @@ def main():
         parser.error("choose a port between 0 and 65535")
     try:
         versions = check_python()
+        # The Windows launcher uses -I, which excludes the script directory.
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from projects import ProjectStore
+
         handler = partial(AssetHandler, assets=read_assets(DIST))
         try:
             server = LocalServer((HOST, args.port), handler)
         except OSError as error:
             raise RuntimeError(f"Cannot listen on {HOST}:{args.port}. Close the other service or choose a free port with --port.") from error
         with server:
+            server.projects = ProjectStore(DIST.parent)
             url = f"http://{HOST}:{server.server_port}/"
             if not args.no_browser:
                 open_edge(url)
