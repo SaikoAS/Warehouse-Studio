@@ -4,6 +4,7 @@ from contextlib import closing, contextmanager
 from pathlib import Path
 import os
 import sqlite3
+import stat
 import tempfile
 import uuid
 
@@ -17,6 +18,42 @@ def project_name(value):
     if not isinstance(value, str) or not 1 <= len(value.strip()) <= 120:
         raise ValueError("Enter a project name between 1 and 120 characters.")
     return value.strip()
+
+
+def require_local_path(path):
+    if not path.is_absolute():
+        raise ValueError("Enter an absolute local folder path, such as C:\\Warehouse Data.")
+    if os.name == "nt":
+        from ctypes import windll
+        if path.drive.startswith("\\\\") or windll.kernel32.GetDriveTypeW(path.anchor) == 4:
+            raise ValueError("Choose a folder on a local drive. Network folders are not supported.")
+
+
+def data_directory(value):
+    if isinstance(value, str):
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] == '"':
+            value = value[1:-1]
+    if not isinstance(value, (str, Path)) or not value or "\0" in str(value):
+        raise ValueError("Enter an absolute local folder path copied from File Explorer.")
+    path = Path(value)
+    # Check both the input drive and the resolved target of a link or junction.
+    require_local_path(path)
+    try:
+        path = path.resolve(strict=True)
+        require_local_path(path)
+        mode = path.stat().st_mode
+    except FileNotFoundError as error:
+        raise ValueError("The data folder does not exist. Check the path or create the folder in File Explorer.") from error
+    except NotADirectoryError as error:
+        raise ValueError("This path points to a file. Choose its containing folder.") from error
+    except PermissionError as error:
+        raise ValueError("Cannot access this data folder. Choose a folder you can read and write.") from error
+    except OSError as error:
+        raise ValueError("Cannot open this data folder. Check the path and your permissions in File Explorer.") from error
+    if not stat.S_ISDIR(mode):
+        raise ValueError("This path points to a file. Choose its containing folder.")
+    return path
 
 
 @contextmanager
@@ -54,21 +91,18 @@ class ProjectStore:
         self.projects = {}
 
     def choose(self, path):
-        path = Path(path).resolve(strict=True)
-        if os.name == "nt":
-            from ctypes import windll
-            if path.drive.startswith("\\\\") or windll.kernel32.GetDriveTypeW(path.anchor) == 4:
-                raise ValueError("Choose a folder on a local drive.")
-        if not path.is_dir() or path.is_relative_to(self.app_folder):
+        path = data_directory(path)
+        if path.is_relative_to(self.app_folder):
             raise ValueError("Choose a data folder outside the application folder.")
         try:
             with tempfile.TemporaryFile(dir=path):
                 pass
         except OSError as error:
-            raise ValueError("Choose a writable data folder.") from error
+            raise ValueError("Cannot write to this data folder. Choose a folder you can write to.") from error
         key = uuid.uuid5(self.session, str(path)).hex
+        selection = self._listing(key, path)
         self.folders[key] = path
-        return self.listing(key)
+        return selection
 
     def folder(self, key):
         path = self.folders.get(key)
@@ -77,9 +111,15 @@ class ProjectStore:
         return path
 
     def listing(self, folder):
-        path = self.folder(folder)
+        return self._listing(folder, self.folder(folder))
+
+    def _listing(self, folder, path):
+        try:
+            entries = list(path.iterdir())
+        except OSError as error:
+            raise ValueError("Cannot list this data folder. Choose a folder you can read.") from error
         projects, warnings = [], []
-        for file in path.iterdir():
+        for file in entries:
             if not file.name.lower().endswith(SUFFIX):
                 continue
             try:

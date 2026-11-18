@@ -5,7 +5,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "vite build",
-    "test:edge": "node --test tests/csv-filters.edge.test.mjs"
+    "test:edge": "node --test tests/*.edge.test.mjs"
   },
   "engines": {
     "node": "24.x"

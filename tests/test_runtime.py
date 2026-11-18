@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import shutil
 import socket
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -110,6 +111,28 @@ class RuntimeTests(unittest.TestCase):
         with patch.dict(sys.modules, {"sqlite3": None}):
             with self.assertRaisesRegex(RuntimeError, "sqlite3 is missing"):
                 server.check_python()
+
+    def test_broken_sqlite_reports_actionable_diagnostic(self):
+        with patch.object(sqlite3, "connect", side_effect=sqlite3.OperationalError):
+            with self.assertRaisesRegex(RuntimeError, "SQLite could not open a database"):
+                server.check_python()
+
+    def test_optional_picker_failure_and_cancellation(self):
+        failures = (
+            subprocess.CalledProcessError(1, "choose_folder.py", stderr=b"No module named 'tkinter'"),
+            OSError("cannot start process"),
+        )
+        for error in failures:
+            with self.subTest(error=error), patch.object(server.subprocess, "run", side_effect=error):
+                with self.assertRaisesRegex(RuntimeError, "Paste a local path.*Use folder"):
+                    server.choose_folder()
+        for output in (b"invalid JSON", b"42"):
+            completed = subprocess.CompletedProcess([], 0, stdout=output)
+            with self.subTest(output=output), patch.object(server.subprocess, "run", return_value=completed):
+                with self.assertRaisesRegex(RuntimeError, "Paste a local path.*Use folder"):
+                    server.choose_folder()
+        with patch.object(server.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, stdout=b"null")):
+            self.assertIsNone(server.choose_folder())
 
     def test_closed_launcher_log_does_not_interrupt_response(self):
         with patch.object(server.BaseHTTPRequestHandler, "log_message", side_effect=BrokenPipeError):
