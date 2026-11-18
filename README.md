@@ -6,7 +6,7 @@ Warehouse Studio is an open-source warehouse software project. Its Windows launc
 
 Double-click **Start Warehouse Studio.cmd** in a writable folder containing the script, the complete `runtime` folder and the `dist` build. Edge opens the launcher at `http://127.0.0.1:8765/`. Keep the start window open while working. Press Ctrl+C there to stop the service.
 
-Use an existing Python 3.13 or newer with the standard-library `sqlite3` module. The Windows 11 startup check used Python 3.13.14 with SQLite 3.50.4. The script uses `python.exe` from your environment. To select another approved installation, set `WAREHOUSE_STUDIO_PYTHON` to its full executable path. If port 8765 is occupied, close the previous service or run `python -I runtime/server.py --port 8766` from the application folder with a free port.
+Use an existing Python 3.13 or newer with the standard-library `sqlite3` module. The Windows 11 startup check used Python 3.13.14 with SQLite 3.50.4. The script uses `python.exe` from your environment. To select another approved installation, set `WAREHOUSE_STUDIO_PYTHON` to its full executable path. If port 8765 is occupied, close the previous service or [start on a free port with the same approved Python executable](docs/windows-compatibility.md#start-on-a-different-port).
 
 ### Work with projects
 

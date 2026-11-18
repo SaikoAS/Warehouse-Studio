@@ -14,6 +14,8 @@
 
 The launcher starts Python directly through the Windows Command Processor. Manual folder selection sends the path to the local service. Python checks the local directory and its access permissions. This path supports offline operation under a standard user account without Tk, PowerShell, application installation, or runtime downloads.
 
+Manual path entry gives Python the absolute Windows path it needs to open a project database in SQLite. Browser folder pickers expose selected files with relative paths or a directory handle scoped to the browser. The Edge CSV picker works because the import needs only the file contents. The existing Tk picker is optional because managed Python installations can omit Tcl/Tk. The PowerShell picker used by OpenSlotting requires the managed Windows policy to allow its script. See [the decision and alternatives in Issue #12](https://github.com/SaikoAS/Warehouse-Studio/issues/12#decision-and-rationale).
+
 ## Startup and folder diagnostics
 
 | Problem | Action |
@@ -21,11 +23,19 @@ The launcher starts Python directly through the Windows Command Processor. Manua
 | Python is missing or older than 3.13 | Point `WAREHOUSE_STUDIO_PYTHON` at the existing, IT-approved `python.exe` and restart. |
 | SQLite is missing or the startup query fails | Ask for an approved Python installation with working standard-library `sqlite3`. |
 | Edge is unavailable or fails to start | Open Edge normally and check with IT that the application and its local app windows are permitted. |
-| Port 8765 is occupied | Close the previous Warehouse Studio service or start with `python -I runtime/server.py --port 8766` using a free port. |
+| Port 8765 is occupied | Close the previous Warehouse Studio service or [start on a different port](#start-on-a-different-port). |
 | Folder path is invalid or inaccessible | Paste the absolute local path from File Explorer. Use a directory outside the application folder that your account can read and write. The launcher identifies a missing directory, a file path, a network folder, and read or write failures separately. |
 | The optional Tk dialog fails | Paste the path into **Project folder path** and select **Use folder**. |
 
 Managed PCs can apply application allowlists, restrict `.cmd` files and child processes, disable Edge capabilities, or limit loopback and local filesystem access. The application can report failures it observes. A successful process launch alone cannot confirm whether policy allows the resulting Edge app window or whether a particular managed profile can complete the workflow. Record the effective restrictions when testing the target setup.
+
+### Start on a different port
+
+Open Command Prompt in the application folder. Run the following command with the full path to the same approved `python.exe` used by the start script. If you set `WAREHOUSE_STUDIO_PYTHON`, use that executable path. Replace `8766` if that port is also occupied.
+
+```cmd
+"C:\Path\To\Approved\python.exe" -I runtime\server.py --port 8766
+```
 
 ## Future dependencies and packaging
 
