@@ -44,6 +44,13 @@ class AssetHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.serve_asset()
 
+    def log_message(self, format, *args):
+        # A launcher can detach its output pipe while the browser is still loading.
+        try:
+            super().log_message(format, *args)
+        except OSError:
+            pass
+
     def serve_asset(self):
         asset = self.assets.get(self.path.partition("?")[0])
         if asset is None:

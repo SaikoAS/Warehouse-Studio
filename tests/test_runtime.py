@@ -112,6 +112,11 @@ class RuntimeTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "sqlite3 is missing"):
                 server.check_python()
 
+    def test_closed_launcher_log_does_not_interrupt_response(self):
+        with patch.object(server.BaseHTTPRequestHandler, "log_message", side_effect=BrokenPipeError):
+            handler = server.AssetHandler.__new__(server.AssetHandler)
+            handler.log_message("request complete")
+
     @unittest.skipUnless(os.name == "nt", "Windows start script")
     def test_launcher_missing_python(self):
         result = subprocess.run(
