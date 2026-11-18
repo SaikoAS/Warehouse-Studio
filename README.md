@@ -10,7 +10,9 @@ Use an existing Python 3.13 or newer with the standard-library `sqlite3` module.
 
 ### Work with projects
 
-With the build available, **Choose folder** opens the Windows directory picker through Python's standard Tk module. Select a writable local data folder outside the application folder. **New project** creates a versioned `.warehouse.sqlite3` file. **Open project** opens a separate Edge window. The launcher can switch folders while existing project windows continue using their original files.
+In File Explorer, copy the absolute path of a writable local folder outside the application folder. Paste it into **Project folder path** and select **Use folder**. Paths copied with the surrounding quotes from **Copy as path** also work. **Browse (optional)** opens the Windows folder picker when Tk is available. If the picker fails, enter the path directly.
+
+**New project** creates a versioned `.warehouse.sqlite3` file in the selected folder. **Open project** opens a separate Edge window. The launcher can switch folders while existing project windows continue using their original files. See [Windows compatibility and runtime dependencies](docs/windows-compatibility.md) for diagnostics and the managed-PC acceptance procedure.
 
 Each project window can edit and save its project's name. The filename stays stable when the display name changes. Use **Refresh** in the launcher to see changes made in another window. Opening the same project twice creates two windows on the same database. If one window saves first, the other must reload the saved name before it can save a new change. After restarting the service, select the data folder again and reopen projects from the launcher.
 
@@ -35,7 +37,7 @@ npm run build
 python -m unittest discover -s tests -v
 ```
 
-With Microsoft Edge installed, run `npm run test:edge` after the build to exercise the CSV filter in a separate headless browser profile.
+With Microsoft Edge installed, run `npm run test:edge` after the build to exercise manual folder selection and CSV preparation in separate headless browser profiles.
 
 Vite writes the interface and its local JavaScript and stylesheet to `dist`. The Python service exposes only those three build files. For a browser-free check, run `python -I runtime/server.py --no-browser`.
 

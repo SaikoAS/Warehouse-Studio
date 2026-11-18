@@ -23,18 +23,27 @@ interface Project {
 
 function Launcher() {
   const [folder, setFolder] = useState<Folder | null>(null);
+  const [folderPath, setFolderPath] = useState("");
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const { busy, error, run } = useAction();
 
-  function chooseFolder() {
+  function showFolder(picked: Folder) {
+    setFolder(picked);
+    setFolderPath(picked.path);
+    setCreating(false);
+    setName("");
+  }
+
+  function selectFolder(event: FormEvent) {
+    event.preventDefault();
+    void run(async () => showFolder(await request<Folder>("select-folder", { path: folderPath })));
+  }
+
+  function browse() {
     void run(async () => {
       const picked = await request<Folder | null>("choose-folder");
-      if (picked) {
-        setFolder(picked);
-        setCreating(false);
-        setName("");
-      }
+      if (picked) showFolder(picked);
     });
   }
 
@@ -52,17 +61,23 @@ function Launcher() {
     <h1>Projects</h1>
     {error && <p role="alert">{error}</p>}
     <section aria-labelledby="folder-heading">
-      <div className="row">
-        <div><h2 id="folder-heading">Data folder</h2>
-          {folder ? <p className="path">{folder.path}</p>
-            : <p>Choose a local folder to create or open projects.</p>}
+      <h2 id="folder-heading">Data folder</h2>
+      <form onSubmit={selectFolder}>
+        <label htmlFor="folder-path">Project folder path</label>
+        <input id="folder-path" required disabled={busy} value={folderPath} spellCheck={false}
+          aria-describedby="folder-path-hint" onChange={event => setFolderPath(event.target.value)} />
+        <small id="folder-path-hint">Paste an absolute local path from File Explorer.</small>
+        <div className="actions">
+          <button disabled={busy || !folderPath.trim()}>Use folder</button>
+          <button type="button" className="secondary" disabled={busy} onClick={browse}>Browse (optional)</button>
         </div>
-        <button disabled={busy} onClick={chooseFolder}>{folder ? "Change folder" : "Choose folder"}</button>
-      </div>
+      </form>
     </section>
     {folder && <section aria-labelledby="projects-heading">
       <div className="row">
-        <h2 id="projects-heading">Projects in this folder</h2>
+        <div><h2 id="projects-heading">Projects in this folder</h2>
+          <p className="path">{folder.path}</p>
+        </div>
         <div className="actions">
           <button className="secondary" disabled={busy} onClick={() => void run(async () =>
             setFolder(await request<Folder>("list", { key: folder.folder })))}>Refresh</button>

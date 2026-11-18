@@ -1,33 +1,10 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { once } from "node:events";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { createInterface } from "node:readline";
 import test from "node:test";
-import { chromium } from "playwright-core";
+import { withEdgeTestService } from "./edge-test-service.mjs";
 
-test("Edge filters quoted Windows newlines and accepts 4,096 Unicode code points", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "warehouse-edge-"));
-  const service = spawn("python", [join(import.meta.dirname, "edge_fixture_server.py"), directory], {
-    stdio: ["ignore", "pipe", "inherit"], windowsHide: true,
-  });
-  const stopped = new Promise(resolve => service.once("close", resolve));
-  const stdout = createInterface({ input: service.stdout });
-  let browser;
-  try {
-    const [url] = await Promise.race([
-      once(stdout, "line", { signal: AbortSignal.timeout(10_000) }),
-      once(service, "exit").then(([code]) => { throw new Error(`Fixture server exited with ${code}.`); }),
-    ]);
-    browser = await chromium.launch({ channel: "msedge" });
-    console.log(`Microsoft Edge ${browser.version()}`);
-    const page = await browser.newPage();
-    page.setDefaultTimeout(8_000);
-    const origin = new URL(url).origin;
-    await page.route("**/*", route =>
-      new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
+test("Edge filters quoted Windows newlines and accepts 4,096 Unicode code points", () =>
+  withEdgeTestService([], async ({ url, context }) => {
+    const page = await context.newPage();
     await page.goto(url);
 
     const longValue = "a".repeat(4095) + "📦";
@@ -78,11 +55,4 @@ test("Edge filters quoted Windows newlines and accepts 4,096 Unicode code points
     assert.equal(await input.getAttribute("aria-invalid"), "true");
     await page.getByRole("button", { name: "Saved result", exact: true }).click();
     await expectOnly(result, "0011");
-  } finally {
-    await browser?.close();
-    stdout.close();
-    service.kill();
-    await stopped;
-    await rm(directory, { recursive: true, force: true, maxRetries: 3 });
-  }
-});
+  }));

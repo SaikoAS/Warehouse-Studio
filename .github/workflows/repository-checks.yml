@@ -67,5 +67,5 @@ jobs:
         run: npm run build
       - name: Run Python runtime and Windows launcher smoke tests
         run: python -m unittest discover -s tests -v
-      - name: Exercise CSV filters in Microsoft Edge
+      - name: Exercise the project launcher and CSV workflow in Microsoft Edge
         run: npm run test:edge

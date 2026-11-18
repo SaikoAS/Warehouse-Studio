@@ -1,6 +1,7 @@
 """Serve the prebuilt Warehouse Studio shell on this PC."""
 
 import argparse
+from contextlib import closing
 from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -31,6 +32,7 @@ PREPARATION_REQUESTS = {
     "/api/csv-apply": (preparation.apply, True),
 }
 BODY_LIMITS = {
+    "/api/select-folder": 256 * 1024,
     "/api/csv-import": 4 * ((preparation.MAX_SOURCE_BYTES + 2) // 3) + 65_536,
     "/api/csv-page": 512 * 1024,
     "/api/csv-apply": 512 * 1024,
@@ -94,6 +96,8 @@ class AssetHandler(BaseHTTPRequestHandler):
             with store.open_database(key, write=write) as (db, _, _):
                 return operation(db, data)
         match self.path:
+            case "/api/select-folder":
+                return store.choose(data.get("path"))
             case "/api/choose-folder":
                 folder = choose_folder()
                 return store.choose(folder) if folder else None
@@ -165,6 +169,11 @@ def check_python():
         import sqlite3
     except ImportError as error:
         raise RuntimeError("sqlite3 is missing. Select a Python installation with sqlite3 support.") from error
+    try:
+        with closing(sqlite3.connect(":memory:")) as db:
+            db.execute("SELECT 1").fetchone()
+    except sqlite3.Error as error:
+        raise RuntimeError("SQLite could not open a database. Select a working Python installation with sqlite3 support.") from error
     return f"Python {sys.version.split()[0]}, SQLite {sqlite3.sqlite_version}"
 
 
@@ -183,10 +192,15 @@ def open_edge(url):
 
 def choose_folder():
     picker = Path(__file__).with_name("choose_folder.py")
-    result = subprocess.run([sys.executable, "-I", str(picker)], capture_output=True)
-    if result.returncode:
-        raise RuntimeError("The Windows folder picker could not open. Check that your Python installation includes Tk.")
-    return json.loads(result.stdout)
+    message = "The optional folder picker requires working Tk. Paste a local path into Project folder path and select Use folder."
+    try:
+        result = subprocess.run([sys.executable, "-I", str(picker)], capture_output=True, check=True)
+        folder = json.loads(result.stdout)
+    except (OSError, subprocess.CalledProcessError, ValueError) as error:
+        raise RuntimeError(message) from error
+    if folder is not None and not isinstance(folder, str):
+        raise RuntimeError(message)
+    return folder
 
 
 def main():
