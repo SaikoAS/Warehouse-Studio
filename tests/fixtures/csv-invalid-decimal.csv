@@ -1,0 +1,4 @@
+Article;Kind;Quantity;Note
+0007;Keep;1,50;"First
+fixture note"
+0008;Keep;not-a-number;Invalid synthetic quantity
