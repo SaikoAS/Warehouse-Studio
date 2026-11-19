@@ -70,11 +70,11 @@ jobs:
       - name: Exercise the project launcher and CSV workflow in Microsoft Edge
         run: npm run test:edge
       - name: Build the Windows ZIP candidate
-        run: python scripts/package_windows.py (Join-Path $env:RUNNER_TEMP 'Warehouse-Studio-v0.1.0-windows.zip')
+        run: python scripts/package_windows.py (Join-Path $env:RUNNER_TEMP 'Warehouse-Studio-v0.1.1-windows.zip')
       - name: Upload the Windows ZIP for PR review
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: Windows-ZIP
-          path: ${{ runner.temp }}/Warehouse-Studio-v0.1.0-windows.zip
+          path: ${{ runner.temp }}/Warehouse-Studio-v0.1.1-windows.zip
           if-no-files-found: error

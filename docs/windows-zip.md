@@ -10,7 +10,7 @@ npm run typecheck
 npm run build
 python -m unittest discover -s tests -v
 npm run test:edge
-python scripts/package_windows.py Warehouse-Studio-v0.1.0-windows.zip
+python scripts/package_windows.py Warehouse-Studio-v0.1.1-windows.zip
 ```
 
 Record `git rev-parse HEAD`, the Node and Python versions, and the SHA-256 printed by the packager. The packager writes an explicit runtime file list in sorted order with fixed ZIP timestamps and normalized text line endings. Build again from the same locked inputs and compare SHA-256. The ZIP contains the built interface, the Python runtime scripts, the Windows scripts, quick-start instructions and the applicable license texts. The Windows CI job attaches a copy to the PR workflow run as the **Windows-ZIP** artifact. Download and unpack the Actions artifact to get the candidate ZIP inside it.
