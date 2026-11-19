@@ -3,11 +3,23 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import os
+import subprocess
 import unittest
+from uuid import uuid4
 from zipfile import ZipFile
 
 from runtime.shortcuts import shortcut_target, update_shortcut
 from scripts.package_windows import build_zip
+
+
+def native_file_exists(path):
+    cmd = Path(os.environ["SystemRoot"]) / "System32" / "cmd.exe"
+    result = subprocess.run(
+        [cmd, "/d", "/v:on", "/q"], env={**os.environ, "WS_TEST_LINK": str(path)},
+        input=b'if exist "!WS_TEST_LINK!" exit /b 0\r\nexit /b 1\r\n',
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    return result.returncode == 0
 
 
 class WindowsPackageTests(unittest.TestCase):
@@ -39,9 +51,13 @@ class WindowsPackageTests(unittest.TestCase):
             source.write_text("@echo off\n", encoding="ascii")
             project = root / "sample.warehouse.sqlite3"
             project.write_bytes(b"synthetic data")
-            link = root / "Warehouse Studio.lnk"
+            # AppData writes can look successful inside Store Python while
+            # remaining invisible to the Windows Shell.
+            link = Path(os.environ["APPDATA"]) / f"Warehouse Studio %!& {uuid4().hex}.lnk"
+            self.addCleanup(link.unlink, missing_ok=True)
 
             self.assertIn("Created", update_shortcut("create", link, source))
+            self.assertTrue(native_file_exists(link))
             self.assertEqual(Path(shortcut_target(link)), source)
             contents = link.read_bytes()
             self.assertIn("already", update_shortcut("create", link, source))
@@ -50,7 +66,7 @@ class WindowsPackageTests(unittest.TestCase):
                     update_shortcut(action, link, root / "somewhere else" / source.name)
             self.assertEqual(link.read_bytes(), contents)
             self.assertIn("Removed", update_shortcut("remove", link, source))
-            self.assertFalse(link.exists())
+            self.assertFalse(native_file_exists(link))
             self.assertIn("no Warehouse Studio shortcut", update_shortcut("remove", link, source))
             self.assertTrue(source.is_file())
             self.assertEqual(project.read_bytes(), b"synthetic data")
