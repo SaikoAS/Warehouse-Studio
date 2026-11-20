@@ -1,6 +1,7 @@
 """CSV preparation through the project-bound local HTTP API."""
 
 from base64 import b64encode
+import codecs
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from functools import partial
@@ -11,8 +12,9 @@ import sqlite3
 from tempfile import TemporaryDirectory
 from threading import Thread
 import unittest
+from unittest.mock import patch
 
-from runtime import preparation, server
+from runtime import csv_source, preparation, server
 from runtime.navigation import ProjectSession
 from runtime.projects import ProjectStore
 
@@ -63,9 +65,13 @@ class PreparationTests(unittest.TestCase):
         self.assertEqual(status, 200, response)
         return response
 
-    def upload(self, data, headers=None, *, key=None, origin=None):
-        return self.post("csv-import", {"name": "synthetic.csv", "content": b64encode(data).decode(), "headers": headers},
-                         key=key, origin=origin)
+    def upload(self, data, headers=None, *, key=None, origin=None, **options):
+        return self.post("csv-import", {
+            "name": "synthetic.csv", "content": b64encode(data).decode(), "headers": headers, **options,
+        }, key=key, origin=origin)
+
+    def preview(self, data, **options):
+        return self.ok("csv-preview", {"name": "synthetic.csv", "content": b64encode(data).decode(), **options})
 
     def stored_workflow(self):
         with closing(sqlite3.connect(self.data / self.project["file"])) as db:
@@ -76,6 +82,7 @@ class PreparationTests(unittest.TestCase):
         status, initial = self.upload(VALID)
         self.assertEqual(status, 200, initial)
         self.assertEqual(initial["source"]["bytes"], len(VALID))
+        source_id = initial["source"]["id"]
         source = self.ok("csv-page", {"view": "source", "revision": 1})
         self.assertEqual(source["rows"][0], [2, ["0007", "Keep", "12,50", 'Synthetic; "quoted"']])
         self.assertEqual(source["rows"][2], [4, ["0042", "Keep", "-0,075", "Two\nfixture lines"]])
@@ -116,6 +123,11 @@ class PreparationTests(unittest.TestCase):
         self.assertNotEqual(reopened, self.project["key"])
         self.assertEqual(self.ok("preparation", key=reopened)["source"], applied)
         self.assertEqual(self.ok("csv-page", {"view": "result", "revision": 2}, key=reopened), preview)
+        record = self.ok("csv-record", {"sourceId": source_id, "line": 4}, key=reopened)
+        self.assertEqual(record["name"], "synthetic.csv")
+        self.assertEqual(record["cells"], ["0042", "Keep", "-0,075", "Two\nfixture lines"])
+        self.assertEqual(self.post("csv-record", {"sourceId": source_id, "line": 5}, key=reopened)[0], 400)
+        self.assertEqual(self.post("csv-record", {"sourceId": source_id, "line": 4}, key="unknown")[0], 400)
         self.ok("csv-apply", {"steps": applied["steps"], "revision": 2}, key=reopened)
         self.assertEqual(self.ok("csv-page", {"view": "result", "revision": 3}, key=reopened), preview)
         self.assertEqual(self.stored_workflow()[:3], (original_bytes, saved_steps, result))
@@ -148,6 +160,92 @@ class PreparationTests(unittest.TestCase):
             [1, ["0007", "1.00000000000000000000000009", "a\r\nb"]],
         ])
         self.assertEqual(self.stored_workflow()[0], data)
+
+    def test_preview_detects_supported_encodings_and_quoted_delimiters(self):
+        comma = 'Article, Note \r\n0007,"Ä;ß\r\n€"\r\n0042,Text\r\n'
+        semicolon = 'Article; Note \r\n0007;"Ä,ß\r\n€"\r\n0042;Text\r\n'
+        cases = [
+            ("utf-8", comma.encode(), ",", "Ä;ß\r\n€"),
+            ("utf-8", codecs.BOM_UTF8 + comma.encode(), ",", "Ä;ß\r\n€"),
+            ("utf-16-le", codecs.BOM_UTF16_LE + comma.encode("utf-16-le"), ",", "Ä;ß\r\n€"),
+            ("utf-16-le", semicolon.encode("utf-16-le"), ";", "Ä,ß\r\n€"),
+            ("utf-16-be", codecs.BOM_UTF16_BE + comma.encode("utf-16-be"), ",", "Ä;ß\r\n€"),
+            ("utf-16-be", semicolon.encode("utf-16-be"), ";", "Ä,ß\r\n€"),
+            ("windows-1252", semicolon.encode("cp1252"), ";", "Ä,ß\r\n€"),
+        ]
+        for encoding, data, delimiter, expected in cases:
+            with self.subTest(encoding=encoding, delimiter=delimiter):
+                response = self.preview(data)
+                self.assertIsNone(response["error"])
+                self.assertEqual(response["suggestedEncoding"], encoding)
+                self.assertEqual(response["suggestedDelimiter"], delimiter)
+                self.assertEqual(response["sample"]["rows"], [[2, ["0007", expected]], [4, ["0042", "Text"]]])
+        self.assertIsNone(self.ok("preparation")["source"])
+
+    def test_explicit_import_options_persist_with_headerless_data_and_raw_bytes(self):
+        data = b"0007;\xc3\xa4,1\r\n0042;Text,2\r\n"
+        ambiguous = self.preview(data)
+        self.assertEqual(ambiguous["suggestedEncoding"], "utf-8")
+        self.assertIsNone(ambiguous["suggestedDelimiter"])
+        self.assertIsNone(ambiguous["sample"])
+        self.assertIn("Choose a delimiter", ambiguous["error"])
+        options = {"encoding": "windows-1252", "delimiter": ",", "headers": "Code,Quantity"}
+        corrected = self.preview(data, **options)
+        first = data.decode("cp1252").split(",")[0]
+        self.assertEqual(corrected["sample"]["rows"][0], [1, [first, "1"]])
+        self.assertIsNone(self.ok("preparation")["source"])
+
+        status, saved = self.upload(data, **options)
+        self.assertEqual(status, 200, saved)
+        self.assertEqual(self.stored_workflow()[0], data)
+        source = saved["source"]
+        self.assertEqual(source["importOptions"], {"encoding": "windows-1252", "delimiter": ",", "hasHeader": False})
+        self.assertEqual(source["columnMetadata"][0], {"position": 1, "originalName": "Code", "assigned": True,
+                                                        "samples": [first, "0042;Text"]})
+        self.assertEqual(self.ok("csv-page", {"view": "source", "revision": 1})["rows"], corrected["sample"]["rows"])
+
+    def test_preview_ignores_incomplete_tail_and_import_rejects_late_errors(self):
+        prefix = b"Article;Note\r\n" + b"0007;SAMPLE\r\n" * 12
+        cut = self.preview(prefix + b'0042;"open\r\ncut', truncated=True)
+        self.assertEqual(len(cut["sample"]["rows"]), 10)
+        for tail, error in ((b'0042;"unfinished\r\nrecord', "Invalid CSV at line 14"),
+                            (b"0042;extra;column\r\n", "CSV line 14 has 3 fields"),
+                            (b"0042;\xff\r\n", "Cannot read this CSV as UTF-8")):
+            with self.subTest(error=error):
+                data = prefix + tail
+                preview = self.preview(data, encoding="utf-8")
+                self.assertEqual(len(preview["sample"]["rows"]), 10)
+                self.assertIsNone(self.ok("preparation")["source"])
+                status, response = self.upload(data, encoding="utf-8", delimiter=";")
+                self.assertEqual(status, 400)
+                self.assertIn(error, response["error"])
+                self.assertIsNone(self.ok("preparation")["source"])
+
+        cut = self.preview(b'Article;Note\r\n0007;complete\r\n0042;"partial\r\nnext', truncated=True)
+        self.assertEqual(cut["sample"]["rows"], [[2, ["0007", "complete"]]])
+
+    def test_v011_workflow_reopens_with_metadata_and_original_record(self):
+        columns = [{"name": name, "type": "text"} for name in ("Article", "Kind", "Quantity", "Note")]
+        old_result = {"columns": columns, "rows": [[2, ["0007", "Keep", "12,50", 'Synthetic; "quoted"']],
+                                                  [4, ["0042", "Keep", "-0,075", "Two\nfixture lines"]]]}
+        with closing(sqlite3.connect(self.data / self.project["file"])) as db, db:
+            db.execute("""CREATE TABLE csv_workflow (
+                singleton INTEGER PRIMARY KEY CHECK (singleton = 1), name TEXT NOT NULL,
+                source BLOB NOT NULL, custom_headers TEXT NOT NULL, columns TEXT NOT NULL,
+                steps TEXT NOT NULL, result TEXT, revision INTEGER NOT NULL
+            )""")
+            db.execute("INSERT INTO csv_workflow VALUES (1, ?, ?, 'null', ?, ?, ?, 2)",
+                       ("legacy.csv", VALID, json.dumps(columns), json.dumps([FILTER]), json.dumps(old_result)))
+        initial = self.ok("preparation")["source"]
+        self.assertEqual(initial["importOptions"], {"encoding": "utf-8", "delimiter": ";", "hasHeader": True})
+        self.assertFalse(initial["columnMetadata"][0]["assigned"])
+        self.assertEqual(initial["steps"], [FILTER])
+        self.assertEqual(self.ok("csv-page", {"view": "result", "revision": 2})["rows"], old_result["rows"])
+        record = self.ok("csv-record", {"sourceId": initial["id"], "line": 4})
+        self.assertEqual(record["cells"], old_result["rows"][1][1])
+        reapplied = self.ok("csv-apply", {"steps": [FILTER], "revision": 2})["source"]
+        self.assertEqual(reapplied["id"], initial["id"])
+        self.assertEqual(self.ok("csv-page", {"view": "result", "revision": 3})["rows"], old_result["rows"])
 
     def test_invalid_import_has_no_side_effect_and_protects_project_reference(self):
         for data, header, error in [
@@ -201,10 +299,9 @@ class PreparationTests(unittest.TestCase):
         header = b"Article;Kind;Quantity;Note\n"
         line = b"0007;Keep;12,50;" + b"x" * 55 + b"\n"
         last = b"0042;Keep;1,25;end"
-        count, padding = divmod(preparation.MAX_SOURCE_BYTES - len(header) - len(last), len(line))
+        count, padding = divmod(1_048_576 - len(header) - len(last), len(line))
         data = header + line * count + last + b"x" * padding
         self.assertEqual(len(data), 1_048_576)
-        self.assertEqual(self.upload(data + b"x")[0], 400)
         self.assertEqual(self.upload(data)[0], 200)
         self.ok("csv-apply", {"steps": STEPS, "revision": 1})
         page_size = preparation.PAGE_SIZE
@@ -213,3 +310,48 @@ class PreparationTests(unittest.TestCase):
         self.assertLessEqual(len(page["rows"]), page_size)
         self.assertEqual(page["rows"][-1], [count + 2, ["0042", "Keep", "1.25", "end" + "x" * padding]])
         self.assertEqual(self.stored_workflow()[0], data)
+
+    def test_import_limits_rows_and_cells_before_saving(self):
+        with patch.object(csv_source, "MAX_ROWS", 2), patch.object(csv_source, "MAX_CELLS", 4):
+            for data in (b"A\nx\nx\nx\n", b"A;B;C\nx;y;z\nx;y;z\n"):
+                with self.subTest(data=data):
+                    status, error = self.upload(data)
+                    self.assertEqual(status, 400)
+                    self.assertIn("data records or", error["error"])
+                    self.assertIsNone(self.ok("preparation")["source"])
+            self.assertEqual(self.upload(b"A;B\nx;y\nx;y\n")[0], 200)
+
+    def test_existing_source_over_limit_cannot_be_materialized(self):
+        self.assertEqual(self.upload(VALID)[0], 200)
+        before = self.stored_workflow()
+        with patch.object(csv_source, "MAX_ROWS", 1):
+            for action, request in (("csv-page", {"view": "preview", "through": 0, "steps": [RENAME], "revision": 1}),
+                                    ("csv-apply", {"steps": [], "revision": 1})):
+                status, error = self.post(action, request)
+                self.assertEqual(status, 400)
+                self.assertIn("data records or", error["error"])
+        self.assertEqual(self.stored_workflow(), before)
+
+    def test_generated_daily_import_preview_and_last_record(self):
+        header = "Order;Article;Quantity;Description;Zone\r\n"
+        body = (f"{row:08d};{row % 17:04d};{row % 100},50;Äußere Lagerzone – Referenz €;West\r\n"
+                for row in range(1, 150_000))
+        last = '00150000;0042;12,50;"Mehrere\r\nZeilen";West\r\n'
+        payload = (header + "".join(body) + last).encode("cp1252")
+        self.assertGreater(len(payload), 1_048_576)
+        sample = self.preview(payload[:csv_source.MAX_PREVIEW_BYTES], truncated=True)
+        self.assertEqual(sample["suggestedEncoding"], "windows-1252")
+        self.assertEqual(len(sample["sample"]["rows"]), 10)
+        self.assertIsNone(self.ok("preparation")["source"])
+        status, saved = self.upload(payload, encoding="windows-1252", delimiter=";")
+        self.assertEqual(status, 200, saved)
+        self.assertEqual(self.stored_workflow()[0], payload)
+        last_page = self.ok("csv-page", {"view": "source", "revision": 1, "offset": 149_999})
+        self.assertEqual(last_page["total"], 150_000)
+        self.assertEqual(last_page["rows"], [[150_001, ["00150000", "0042", "12,50", "Mehrere\r\nZeilen", "West"]]])
+        steps = [{**FILTER, "value": "0042"}, DECIMAL]
+        applied = self.ok("csv-apply", {"steps": steps, "revision": 1})["source"]
+        result = self.ok("csv-page", {"view": "result", "revision": 2})
+        self.assertEqual(result["rows"], [[150_001, ["00150000", "0042", "12.50", "Mehrere\r\nZeilen", "West"]]])
+        record = self.ok("csv-record", {"sourceId": applied["id"], "line": 150_001})
+        self.assertEqual(record["cells"], last_page["rows"][0][1])

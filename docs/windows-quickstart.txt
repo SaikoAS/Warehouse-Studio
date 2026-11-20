@@ -14,8 +14,9 @@ folder you can write to. Start from the extracted folder.
    .warehouse.sqlite3 file in the selected data folder.
 4. Open Import, Data preparation or Results from the project window. Each opens
    in its own Edge window. Select a module again to bring its window forward.
-5. Import a UTF-8, semicolon-delimited CSV. Add steps in Data preparation and
-   use Apply to save the result. Results displays the saved output.
+5. Choose a CSV in Import, check the encoding, delimiter, and preview, then
+   select Import CSV. Add steps in Data preparation and use Apply to save the
+   result. Select a result line number to see the original record.
 6. Choose Close project to close the project and its modules and return to the
    launcher. If a module has unsaved changes, you can cancel the close.
 
