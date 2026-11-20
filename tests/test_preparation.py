@@ -12,6 +12,7 @@ import sqlite3
 from tempfile import TemporaryDirectory
 from threading import Thread
 import unittest
+from unittest.mock import patch
 
 from runtime import csv_source, preparation, server
 from runtime.navigation import ProjectSession
@@ -309,6 +310,27 @@ class PreparationTests(unittest.TestCase):
         self.assertLessEqual(len(page["rows"]), page_size)
         self.assertEqual(page["rows"][-1], [count + 2, ["0042", "Keep", "1.25", "end" + "x" * padding]])
         self.assertEqual(self.stored_workflow()[0], data)
+
+    def test_import_limits_rows_and_cells_before_saving(self):
+        with patch.object(csv_source, "MAX_ROWS", 2), patch.object(csv_source, "MAX_CELLS", 4):
+            for data in (b"A\nx\nx\nx\n", b"A;B;C\nx;y;z\nx;y;z\n"):
+                with self.subTest(data=data):
+                    status, error = self.upload(data)
+                    self.assertEqual(status, 400)
+                    self.assertIn("data records or", error["error"])
+                    self.assertIsNone(self.ok("preparation")["source"])
+            self.assertEqual(self.upload(b"A;B\nx;y\nx;y\n")[0], 200)
+
+    def test_existing_source_over_limit_cannot_be_materialized(self):
+        self.assertEqual(self.upload(VALID)[0], 200)
+        before = self.stored_workflow()
+        with patch.object(csv_source, "MAX_ROWS", 1):
+            for action, request in (("csv-page", {"view": "preview", "through": 0, "steps": [RENAME], "revision": 1}),
+                                    ("csv-apply", {"steps": [], "revision": 1})):
+                status, error = self.post(action, request)
+                self.assertEqual(status, 400)
+                self.assertIn("data records or", error["error"])
+        self.assertEqual(self.stored_workflow(), before)
 
     def test_generated_daily_import_preview_and_last_record(self):
         header = "Order;Article;Quantity;Description;Zone\r\n"

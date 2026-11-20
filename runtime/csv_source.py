@@ -12,6 +12,8 @@ MAX_PREVIEW_BYTES = 2 * 1024 * 1024
 MAX_COLUMNS = 64
 MAX_HEADER_LENGTH = 120
 MAX_CELL_LENGTH = 4096
+MAX_ROWS = 200_000
+MAX_CELLS = 1_000_000
 PREVIEW_ROWS = 10
 ENCODINGS = {
     "utf-8": ("UTF-8", "utf-8", codecs.BOM_UTF8),
@@ -108,7 +110,9 @@ def table(text, delimiter, assigned_names, truncated=False):
 
 
 def validated_rows(rows, width):
-    for line, cells in rows:
+    for count, (line, cells) in enumerate(rows, 1):
+        if count > MAX_ROWS or count * width > MAX_CELLS:
+            raise ValueError(f"The CSV exceeds the limit of {MAX_ROWS:,} data records or {MAX_CELLS:,} data cells.")
         if len(cells) != width:
             raise ValueError(f"CSV line {line} has {len(cells)} fields. Expected {width}.")
         if any(len(cell) > MAX_CELL_LENGTH for cell in cells):
