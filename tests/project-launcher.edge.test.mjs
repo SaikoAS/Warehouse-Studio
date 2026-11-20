@@ -74,6 +74,8 @@ test("Edge opens projects and saves a CSV using manual folder selection when Tk 
     const preparation = await openModule(created, "Data preparation");
     const results = await openModule(created, "Results");
     await imported.getByLabel("CSV file").setInputFiles(join(import.meta.dirname, "fixtures", "csv-valid.csv"));
+    await imported.getByRole("table", { name: "Import preview" }).waitFor();
+    await preparation.getByText("Import a CSV before preparing data.").waitFor();
     await imported.getByRole("button", { name: "Import CSV" }).click();
     await preparation.getByRole("button", { name: "Add step" }).click();
     await preparation.getByLabel("Operation").selectOption("filter");
@@ -88,8 +90,15 @@ test("Edge opens projects and saves a CSV using manual folder selection when Tk 
     assert.ok([imported, preparation, results].every(page => page.isClosed()));
 
     const reopened = await openProject(freshLauncher, "Synthetic CSV project");
-    const saved = (await openModule(reopened, "Results")).getByRole("table", { name: "Saved result" });
+    const reopenedResults = await openModule(reopened, "Results");
+    const saved = reopenedResults.getByRole("table", { name: "Saved result" });
     await saved.getByRole("cell", { name: "0007", exact: true }).waitFor();
     assert.equal(await saved.locator("tbody tr").count(), 2);
+    await saved.getByRole("button", { name: "Open original CSV line 4" }).click();
+    const original = reopenedResults.getByRole("table", { name: "csv-valid.csv · CSV line 4" });
+    await original.getByRole("cell", { name: "0042", exact: true }).waitFor();
+    assert.equal(await original.locator("tbody tr").last().getByRole("cell").textContent(), "Two\nfixture lines");
+    await reopenedResults.keyboard.press("Escape");
+    await reopenedResults.getByRole("dialog", { name: "Original CSV record" }).waitFor({ state: "hidden" });
     assert.deepEqual(await readFile(join(directory, existingFile)), before);
   }));

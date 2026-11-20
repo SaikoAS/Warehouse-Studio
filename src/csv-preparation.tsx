@@ -1,4 +1,5 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState } from "react";
+import { CsvImport, readFile, type CsvImportOptions } from "./csv-import";
 import { actionError, request, useAction } from "./local-service";
 import { publishChange, useCloseProtection, useProjectUpdates, type Module } from "./project-windows";
 
@@ -16,6 +17,7 @@ interface Column {
 }
 
 interface Source {
+  id: string;
   name: string;
   bytes: number;
   revision: number;
@@ -26,6 +28,7 @@ interface Source {
 
 interface SavedPreparation {
   maxBytes: number;
+  maxPreviewBytes: number;
   maxCellLength: number;
   maxSteps: number;
   source: Source | null;
@@ -56,56 +59,6 @@ function newStep(operation: Step["operation"], column: number): Step {
     case "filter": return { operation, column, mode: "keep", value: "" };
     case "convert": return { operation, column, target: "text", locale: "" };
   }
-}
-
-function readFile(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("Could not read this file. Choose it again."));
-    reader.onload = () => {
-      const data = String(reader.result);
-      resolve(data.slice(data.indexOf(",") + 1));
-    };
-    reader.readAsDataURL(file);
-  });
-}
-
-function ImportForm({ busy, maxBytes, onImport, onDirtyChange }: {
-  busy: boolean;
-  maxBytes: number;
-  onImport: (file: File, headers: string | null) => void;
-  onDirtyChange: (dirty: boolean) => void;
-}) {
-  const [file, setFile] = useState<File | null>(null);
-  const [custom, setCustom] = useState(false);
-  const [headers, setHeaders] = useState("");
-  const tooLarge = file !== null && file.size > maxBytes;
-  useEffect(() => onDirtyChange(file !== null || custom), [file, custom, onDirtyChange]);
-
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    if (file && !tooLarge) onImport(file, custom ? headers : null);
-  }
-
-  return <form onSubmit={submit}>
-    <label htmlFor="source-file">CSV file</label>
-    <input id="source-file" type="file" accept=".csv,text/csv" required disabled={busy}
-      aria-describedby="csv-format" onChange={event => setFile(event.target.files?.[0] ?? null)} />
-    <small id="csv-format">UTF-8, semicolon-delimited, up to {maxBytes / (1024 * 1024)} MiB.</small>
-    {tooLarge && <p role="alert">This file exceeds the CSV size limit.</p>}
-    <label htmlFor="csv-header-mode">Column names</label>
-    <select id="csv-header-mode" disabled={busy} value={custom ? "custom" : "file"}
-      onChange={event => setCustom(event.target.value === "custom")}>
-      <option value="file">Use the first CSV row</option>
-      <option value="custom">Enter names for a CSV without headers</option>
-    </select>
-    {custom && <>
-      <label htmlFor="csv-headers">Custom column names (separated by semicolons)</label>
-      <input id="csv-headers" required maxLength={16_384} disabled={busy}
-        value={headers} onChange={event => setHeaders(event.target.value)} />
-    </>}
-    <div className="actions"><button disabled={busy || !file || tooLarge}>Import CSV</button></div>
-  </form>;
 }
 
 function StepFields({ step, columns, invalidFilter, onChange }: {
@@ -162,18 +115,68 @@ function StepFields({ step, columns, invalidFilter, onChange }: {
   </>;
 }
 
-function DataTable({ projectKey, revision, view, steps, selected }: {
+interface SourceRecord {
+  name: string;
+  line: number;
+  columns: string[];
+  cells: string[];
+}
+
+function OriginalRecord({ projectKey, sourceId, line, onClose }: {
   projectKey: string;
+  sourceId: string;
+  line: number;
+  onClose: () => void;
+}) {
+  const [data, setData] = useState<{ record: SourceRecord } | { error: string } | null>(null);
+  const dialog = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    dialog.current?.showModal();
+    const controller = new AbortController();
+    void request<SourceRecord>("csv-record", { key: projectKey, sourceId, line }, controller.signal)
+      .then(record => {
+        if (!controller.signal.aborted) setData({ record });
+      }, cause => {
+        if (!controller.signal.aborted) setData({ error: actionError(cause) });
+      });
+    return () => controller.abort();
+  }, [projectKey, sourceId, line]);
+
+  const record = data && "record" in data ? data.record : null;
+  return <dialog className="original-record" ref={dialog} onClose={onClose} aria-labelledby="original-record-title">
+    <div className="row">
+      <h3 id="original-record-title">Original CSV record</h3>
+      <button type="button" className="secondary" onClick={() => dialog.current?.close()}>Close</button>
+    </div>
+    {!data && <p role="status">Loading original record…</p>}
+    {data && "error" in data && <p role="alert">{data.error}</p>}
+    {record && <div className="table-scroll" tabIndex={0} role="region" aria-label="CSV record table">
+      <table>
+        <caption>{record.name} · CSV line {record.line}</caption>
+        <tbody>{record.columns.map((column, index) => <tr key={index}>
+          <th scope="row">{column}</th><td>{record.cells[index]}</td>
+        </tr>)}</tbody>
+      </table>
+    </div>}
+  </dialog>;
+}
+
+function DataTable({ projectKey, sourceId, revision, view, steps, selected }: {
+  projectKey: string;
+  sourceId: string;
   revision: number;
   view: View;
   steps?: Step[];
   selected?: number;
 }) {
   const [offset, setOffset] = useState(0);
+  const [originalLine, setOriginalLine] = useState<number | null>(null);
   const [data, setData] = useState<{ page: Page } | { error: string } | null>(null);
 
   useEffect(() => {
     setOffset(0);
+    setOriginalLine(null);
   }, [steps, selected]);
 
   useEffect(() => {
@@ -208,7 +211,10 @@ function DataTable({ projectKey, revision, view, steps, selected }: {
           {column.name}<small>{column.type}</small>
         </th>)}</tr></thead>
         <tbody>{rows.map(([line, cells]) => <tr key={line}>
-          <th scope="row">{line}</th>{cells.map((cell, index) => <td key={index}>{cell}</td>)}
+          <th scope="row">{view === "source" ? line : <button type="button" className="secondary csv-line"
+            aria-label={`Open original CSV line ${line}`} aria-haspopup="dialog"
+            onClick={() => setOriginalLine(line)}>{line}</button>}</th>
+          {cells.map((cell, index) => <td key={index}>{cell}</td>)}
         </tr>)}</tbody>
       </table>
     </div>
@@ -216,11 +222,13 @@ function DataTable({ projectKey, revision, view, steps, selected }: {
       <span role="status">{total === 0 ? "No data rows." : `${offset + 1}–${offset + rows.length} of ${total} rows`}</span>
       {total > pageSize && <div className="actions">
         <button type="button" className="secondary" disabled={offset === 0}
-          onClick={() => setOffset(offset - pageSize)}>Previous rows</button>
+          onClick={() => { setOffset(offset - pageSize); setOriginalLine(null); }}>Previous rows</button>
         <button type="button" className="secondary" disabled={offset + pageSize >= total}
-          onClick={() => setOffset(offset + pageSize)}>Next rows</button>
+          onClick={() => { setOffset(offset + pageSize); setOriginalLine(null); }}>Next rows</button>
       </div>}
     </div>
+    {originalLine !== null && <OriginalRecord key={originalLine} projectKey={projectKey} sourceId={sourceId} line={originalLine}
+      onClose={() => setOriginalLine(null)} />}
   </>;
 }
 
@@ -259,17 +267,19 @@ export function CsvPreparation({ projectKey, module }: { projectKey: string; mod
 
   useEffect(reload, [projectKey]);
 
-  function importCsv(file: File, headers: string | null) {
+  async function importCsv(file: File, options: CsvImportOptions) {
     setNotice("");
     setWriting(true);
-    void run(async () => {
+    try {
       show(await request<SavedPreparation>("csv-import", {
-        key: projectKey, name: file.name, content: await readFile(file), headers,
+        key: projectKey, name: file.name, content: await readFile(file), ...options,
       }));
       setImportDirty(false);
       publishChange("source-imported");
       setNotice("CSV imported.");
-    }).finally(() => setWriting(false));
+    } finally {
+      setWriting(false);
+    }
   }
 
   function apply() {
@@ -316,12 +326,13 @@ export function CsvPreparation({ projectKey, module }: { projectKey: string; mod
     {notice && <p role="status">{notice}</p>}
     {!saved && busy && <p role="status">Loading preparation…</p>}
     {saved && !source && module === "import" &&
-      <ImportForm busy={busy} maxBytes={saved.maxBytes} onImport={importCsv} onDirtyChange={setImportDirty} />}
+      <CsvImport projectKey={projectKey} disabled={busy} maxBytes={saved.maxBytes}
+        maxPreviewBytes={saved.maxPreviewBytes} onImport={importCsv} onReload={reload} onDirtyChange={setImportDirty} />}
     {source && module === "import" && <p className="path">{source.name} · {source.bytes.toLocaleString()} bytes</p>}
     {saved && module === "results" && (source?.hasResult ?
       <>
         <p>Result version {source.revision}</p>
-        <DataTable key={source.revision} projectKey={projectKey} revision={source.revision} view="result" />
+        <DataTable key={source.revision} projectKey={projectKey} sourceId={source.id} revision={source.revision} view="result" />
       </> : <p>No result is saved. Apply steps in Data preparation first.</p>)}
     {saved && !source && module === "preparation" && <p>Import a CSV before preparing data.</p>}
     {saved && source && module === "preparation" && <>
@@ -363,7 +374,7 @@ export function CsvPreparation({ projectKey, module }: { projectKey: string; mod
           aria-pressed={view === option} disabled={option === "preview" && selected === null}
           onClick={() => setView(option)}>{viewLabels[option]}</button>)}
       </div>
-      {!previewBlocked && <DataTable key={`${view}:${source.revision}`} projectKey={projectKey} revision={source.revision} view={view}
+      {!previewBlocked && <DataTable key={`${view}:${source.revision}`} projectKey={projectKey} sourceId={source.id} revision={source.revision} view={view}
         steps={view === "preview" ? steps : undefined} selected={view === "preview" ? selected ?? undefined : undefined} />}
     </>}
   </section>;

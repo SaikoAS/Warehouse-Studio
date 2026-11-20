@@ -17,7 +17,7 @@ from threading import Thread
 if __name__ == "__main__":
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from runtime import preparation
+from runtime import csv_source, preparation
 from runtime.navigation import Navigation
 
 HOST = "127.0.0.1"
@@ -30,13 +30,16 @@ ASSETS = {
 }
 PREPARATION_REQUESTS = {
     "/api/preparation": (preparation.state, False),
+    "/api/csv-preview": (csv_source.preview, False),
     "/api/csv-import": (preparation.import_source, True),
     "/api/csv-page": (preparation.page, False),
+    "/api/csv-record": (preparation.original_record, False),
     "/api/csv-apply": (preparation.apply, True),
 }
 BODY_LIMITS = {
     "/api/select-folder": 256 * 1024,
-    "/api/csv-import": 4 * ((preparation.MAX_SOURCE_BYTES + 2) // 3) + 65_536,
+    "/api/csv-preview": 4 * ((csv_source.MAX_PREVIEW_BYTES + 2) // 3) + 131_072,
+    "/api/csv-import": 4 * ((csv_source.MAX_SOURCE_BYTES + 2) // 3) + 131_072,
     "/api/csv-page": 512 * 1024,
     "/api/csv-apply": 512 * 1024,
 }
