@@ -49,9 +49,10 @@ test("Edge filters quoted Windows newlines and accepts 4,096 Unicode code points
     await apply.click();
     await expectOnly(result, "0011");
 
-    await input.focus();
+    await page.bringToFront();
     await input.press("End");
-    await page.keyboard.insertText("x");
+    await input.press("x");
+    assert.equal(await input.inputValue(), longValue + "x");
     await page.getByRole("alert").filter({ hasText: "enter a match value of up to" }).waitFor();
     assert.equal(await apply.isDisabled(), true);
     assert.equal(await input.getAttribute("aria-invalid"), "true");
