@@ -40,9 +40,8 @@ test("Edge keeps a manual folder selection when the optional picker responds lat
   }));
 
 test("Edge opens projects and saves a CSV using manual folder selection when Tk is unavailable", () =>
-  withEdgeTestService(["--launcher"], async ({ directory, url, nextUrl, context }) => {
-    const launcher = await context.newPage();
-    await launcher.goto(url);
+  withEdgeTestService(["--launcher"], async ({ directory, url, openApp, openProject, openModule, closeProject }) => {
+    const launcher = await openApp(url);
     const pathInput = launcher.getByLabel("Project folder path");
     const select = launcher.getByRole("button", { name: "Use folder" });
     const browse = launcher.getByRole("button", { name: "Browse (optional)" });
@@ -54,45 +53,43 @@ test("Edge opens projects and saves a CSV using manual folder selection when Tk 
     await select.click();
     await launcher.getByRole("button", { name: "Open project Existing local project" }).waitFor();
 
-    async function openProject(name) {
-      const destination = nextUrl();
-      await launcher.getByRole("button", { name: `Open project ${name}` }).click();
-      const projectUrl = await destination;
-      assert.ok(projectUrl.startsWith(`${url}#project=`));
-      const project = await context.newPage();
-      await project.goto(projectUrl);
-      await project.getByRole("heading", { name, exact: true }).waitFor();
-      return project;
-    }
-
-    const existing = await openProject("Existing local project");
+    const existing = await openProject(launcher);
     const existingFile = await existing.getByText(/^[a-f0-9]+\.warehouse\.sqlite3$/).innerText();
     const before = await readFile(join(directory, existingFile));
+    const returned = await closeProject(existing);
+    const returnedPath = returned.getByLabel("Project folder path");
 
-    await pathInput.fill(join(directory, "missing"));
-    await select.click();
-    await launcher.getByRole("alert").filter({ hasText: "does not exist" }).waitFor();
-    await launcher.getByRole("button", { name: "New project" }).click();
-    await launcher.getByLabel("Project name").fill("Synthetic CSV project");
-    await launcher.getByRole("button", { name: "Create project" }).click();
-    const created = await openProject("Synthetic CSV project");
+    await returned.getByRole("button", { name: "Open project Existing local project" }).waitFor();
+    await returnedPath.fill(join(directory, "missing"));
+    await returned.getByRole("button", { name: "Use folder" }).click();
+    await returned.getByRole("alert").filter({ hasText: "does not exist" }).waitFor();
+    await returned.getByRole("button", { name: "New project" }).click();
+    await returned.getByLabel("Project name").fill("Synthetic CSV project");
+    await returned.getByRole("button", { name: "Create project" }).click();
+    const created = await openProject(returned, "Synthetic CSV project");
     const createdFile = await created.getByText(/^[a-f0-9]+\.warehouse\.sqlite3$/).innerText();
     assert.equal((await stat(join(directory, createdFile))).isFile(), true);
 
-    await created.getByLabel("CSV file").setInputFiles(join(import.meta.dirname, "fixtures", "csv-valid.csv"));
-    await created.getByRole("button", { name: "Import CSV" }).click();
-    await created.getByRole("button", { name: "Add step" }).click();
-    await created.getByLabel("Operation").selectOption("filter");
-    await created.getByLabel("Source column").selectOption({ label: "Kind" });
-    await created.getByLabel("Match value").fill("Keep");
-    await created.getByRole("button", { name: "Apply", exact: true }).click();
-    await created.getByRole("table", { name: "Saved result" }).getByRole("cell", { name: "0007", exact: true }).waitFor();
-    await created.close();
+    const imported = await openModule(created, "Import");
+    const preparation = await openModule(created, "Data preparation");
+    const results = await openModule(created, "Results");
+    await imported.getByLabel("CSV file").setInputFiles(join(import.meta.dirname, "fixtures", "csv-valid.csv"));
+    await imported.getByRole("button", { name: "Import CSV" }).click();
+    await preparation.getByRole("button", { name: "Add step" }).click();
+    await preparation.getByLabel("Operation").selectOption("filter");
+    await preparation.getByLabel("Source column").selectOption({ label: "Kind" });
+    await preparation.getByLabel("Match value").fill("Keep");
+    await created.getByRole("button", { name: "Close project", exact: true }).click();
+    await created.getByRole("button", { name: "Cancel", exact: true }).click();
+    assert.equal(await preparation.getByLabel("Match value").inputValue(), "Keep");
+    await preparation.getByRole("button", { name: "Apply", exact: true }).click();
+    await results.getByRole("table", { name: "Saved result" }).getByRole("cell", { name: "0007", exact: true }).waitFor();
+    const freshLauncher = await closeProject(created);
+    assert.ok([imported, preparation, results].every(page => page.isClosed()));
 
-    const reopened = await openProject("Synthetic CSV project");
-    const saved = reopened.getByRole("table", { name: "Saved result" });
+    const reopened = await openProject(freshLauncher, "Synthetic CSV project");
+    const saved = (await openModule(reopened, "Results")).getByRole("table", { name: "Saved result" });
     await saved.getByRole("cell", { name: "0007", exact: true }).waitFor();
     assert.equal(await saved.locator("tbody tr").count(), 2);
-    await existing.getByLabel("CSV file").waitFor();
     assert.deepEqual(await readFile(join(directory, existingFile)), before);
   }));

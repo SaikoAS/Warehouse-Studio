@@ -36,7 +36,7 @@ class WindowsPackageTests(unittest.TestCase):
                     "dist/index.html", "dist/assets/index.css", "dist/assets/studio.js",
                     "licenses/react.txt", "licenses/react-dom.txt", "licenses/scheduler.txt",
                     "runtime/server.py", "runtime/projects.py", "runtime/preparation.py",
-                    "runtime/choose_folder.py", "runtime/shortcuts.py",
+                    "runtime/choose_folder.py", "runtime/navigation.py", "runtime/shortcuts.py",
                 ]))
                 for name in archive.namelist():
                     if name.endswith(".cmd"):

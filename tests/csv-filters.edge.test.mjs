@@ -3,16 +3,18 @@ import test from "node:test";
 import { withEdgeTestService } from "./edge-test-service.mjs";
 
 test("Edge filters quoted Windows newlines and accepts 4,096 Unicode code points", () =>
-  withEdgeTestService([], async ({ url, context }) => {
-    const page = await context.newPage();
-    await page.goto(url);
+  withEdgeTestService([], async ({ openLauncher, openProject, openModule }) => {
+    const project = await openProject(await openLauncher());
+    const page = await openModule(project, "Data preparation");
+    const results = await openModule(project, "Results");
+    const imported = await openModule(project, "Import");
 
     const longValue = "a".repeat(4095) + "📦";
-    await page.getByLabel("CSV file").setInputFiles({
+    await imported.getByLabel("CSV file").setInputFiles({
       name: "synthetic-filter.csv", mimeType: "text/csv",
       buffer: Buffer.from(`Article;Note\r\n0007;"Alpha\r\nBeta"\r\n0011;${longValue}\r\n`),
     });
-    await page.getByRole("button", { name: "Import CSV" }).click();
+    await imported.getByRole("button", { name: "Import CSV" }).click();
     await page.getByRole("table", { name: "Source", exact: true }).waitFor();
     await page.getByRole("button", { name: "Add step" }).click();
     await page.getByLabel("Operation").selectOption("filter");
@@ -21,7 +23,7 @@ test("Edge filters quoted Windows newlines and accepts 4,096 Unicode code points
     const input = page.getByLabel("Match value");
     const apply = page.getByRole("button", { name: "Apply", exact: true });
     const preview = page.getByRole("table", { name: "Step preview" });
-    const result = page.getByRole("table", { name: "Saved result" });
+    const result = results.getByRole("table", { name: "Saved result" });
     async function expectOnly(table, article) {
       await table.getByRole("cell", { name: article, exact: true }).waitFor();
       assert.equal(await table.locator("tbody tr").count(), 1);
@@ -53,6 +55,5 @@ test("Edge filters quoted Windows newlines and accepts 4,096 Unicode code points
     await page.getByRole("alert").filter({ hasText: "enter a match value of up to" }).waitFor();
     assert.equal(await apply.isDisabled(), true);
     assert.equal(await input.getAttribute("aria-invalid"), "true");
-    await page.getByRole("button", { name: "Saved result", exact: true }).click();
     await expectOnly(result, "0011");
   }));

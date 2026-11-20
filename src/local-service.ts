@@ -1,10 +1,12 @@
 import { useState } from "react";
 
+export const projectSession = new URLSearchParams(window.location.hash.slice(1)).get("session");
+
 export async function request<T>(action: string, data: object = {}, signal?: AbortSignal): Promise<T> {
   const response = await fetch("/api/" + action, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
+    body: JSON.stringify(projectSession ? { ...data, session: projectSession } : data),
     signal,
   });
   if (!response.headers.get("Content-Type")?.startsWith("application/json")) {

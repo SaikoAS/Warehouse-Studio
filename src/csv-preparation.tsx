@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { actionError, request, useAction } from "./local-service";
+import { publishChange, useCloseProtection, useProjectUpdates, type Module } from "./project-windows";
 
 type CellType = "text" | "decimal";
 type View = "source" | "preview" | "result";
@@ -69,15 +70,17 @@ function readFile(file: File): Promise<string> {
   });
 }
 
-function ImportForm({ busy, maxBytes, onImport }: {
+function ImportForm({ busy, maxBytes, onImport, onDirtyChange }: {
   busy: boolean;
   maxBytes: number;
   onImport: (file: File, headers: string | null) => void;
+  onDirtyChange: (dirty: boolean) => void;
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [custom, setCustom] = useState(false);
   const [headers, setHeaders] = useState("");
   const tooLarge = file !== null && file.size > maxBytes;
+  useEffect(() => onDirtyChange(file !== null || custom), [file, custom, onDirtyChange]);
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -221,14 +224,22 @@ function DataTable({ projectKey, revision, view, steps, selected }: {
   </>;
 }
 
-export function CsvPreparation({ projectKey }: { projectKey: string }) {
+export function CsvPreparation({ projectKey, module }: { projectKey: string; module: Module }) {
   const [saved, setSaved] = useState<SavedPreparation | null>(null);
   const [steps, setSteps] = useState<Step[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
   const [view, setView] = useState<View>("source");
   const [notice, setNotice] = useState("");
+  const [importDirty, setImportDirty] = useState(false);
+  const [writing, setWriting] = useState(false);
   const { busy, error, run } = useAction();
   const source = saved?.source;
+  const stepsDirty = !!source && JSON.stringify(steps) !== JSON.stringify(source.steps);
+  useCloseProtection(() => ({ dirty: module === "import" ? importDirty : stepsDirty, writing }));
+  useProjectUpdates(change => {
+    if (change === "source-imported" && module === "preparation") reload();
+    if ((change === "source-imported" || change === "result-applied") && module === "results") reload();
+  });
   const currentStep = selected === null ? null : steps[selected];
   const invalidFilter = saved ? steps.findIndex(step =>
     step.operation === "filter" && exceedsCharacterLimit(step.value, saved.maxCellLength)) : -1;
@@ -238,7 +249,7 @@ export function CsvPreparation({ projectKey }: { projectKey: string }) {
     setSaved(persisted);
     setSteps(persisted.source?.steps ?? []);
     setSelected(null);
-    setView(persisted.source?.hasResult ? "result" : "source");
+    setView("source");
   }
 
   function reload() {
@@ -250,19 +261,26 @@ export function CsvPreparation({ projectKey }: { projectKey: string }) {
 
   function importCsv(file: File, headers: string | null) {
     setNotice("");
-    void run(async () => show(await request<SavedPreparation>("csv-import", {
-      key: projectKey, name: file.name, content: await readFile(file), headers,
-    })));
+    setWriting(true);
+    void run(async () => {
+      show(await request<SavedPreparation>("csv-import", {
+        key: projectKey, name: file.name, content: await readFile(file), headers,
+      }));
+      setImportDirty(false);
+      publishChange("source-imported");
+      setNotice("CSV imported.");
+    }).finally(() => setWriting(false));
   }
 
   function apply() {
     if (!source) return;
     setNotice("");
+    setWriting(true);
     void run(async () => {
       setSaved(await request<SavedPreparation>("csv-apply", { key: projectKey, revision: source.revision, steps }));
-      setView("result");
+      publishChange("result-applied");
       setNotice("Result saved.");
-    });
+    }).finally(() => setWriting(false));
   }
 
   function select(index: number) {
@@ -289,17 +307,24 @@ export function CsvPreparation({ projectKey }: { projectKey: string }) {
     }
   }
 
-  return <section aria-labelledby="preparation-heading">
+  return <section aria-label={module === "import" ? "CSV source" : module === "results" ? "Saved result" : "Preparation"}>
     <div className="row">
-      <h2 id="preparation-heading">CSV preparation</h2>
-      {(source || error) && <button type="button" className="secondary" disabled={busy}
-        onClick={reload}>Reload saved preparation</button>}
+      {error && <button type="button" className="secondary" disabled={busy || stepsDirty}
+        onClick={reload}>Reload saved data</button>}
     </div>
     {error && <p role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
     {!saved && busy && <p role="status">Loading preparation…</p>}
-    {saved && !source && <ImportForm busy={busy} maxBytes={saved.maxBytes} onImport={importCsv} />}
-    {saved && source && <>
+    {saved && !source && module === "import" &&
+      <ImportForm busy={busy} maxBytes={saved.maxBytes} onImport={importCsv} onDirtyChange={setImportDirty} />}
+    {source && module === "import" && <p className="path">{source.name} · {source.bytes.toLocaleString()} bytes</p>}
+    {saved && module === "results" && (source?.hasResult ?
+      <>
+        <p>Result version {source.revision}</p>
+        <DataTable key={source.revision} projectKey={projectKey} revision={source.revision} view="result" />
+      </> : <p>No result is saved. Apply steps in Data preparation first.</p>)}
+    {saved && !source && module === "preparation" && <p>Import a CSV before preparing data.</p>}
+    {saved && source && module === "preparation" && <>
       <p className="path">{source.name} · {source.bytes.toLocaleString()} bytes</p>
       <fieldset className="preparation-editor" disabled={busy}>
         <legend>Preparation steps</legend>
@@ -334,8 +359,8 @@ export function CsvPreparation({ projectKey }: { projectKey: string }) {
         </p>}
       </fieldset>
       <div className="actions table-views" aria-label="Data view" role="group">
-        {(Object.keys(viewLabels) as View[]).map(option => <button key={option} type="button" className="secondary"
-          aria-pressed={view === option} disabled={(option === "preview" && selected === null) || (option === "result" && !source.hasResult)}
+        {(["source", "preview"] as const).map(option => <button key={option} type="button" className="secondary"
+          aria-pressed={view === option} disabled={option === "preview" && selected === null}
           onClick={() => setView(option)}>{viewLabels[option]}</button>)}
       </div>
       {!previewBlocked && <DataTable key={`${view}:${source.revision}`} projectKey={projectKey} revision={source.revision} view={view}

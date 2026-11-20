@@ -13,6 +13,7 @@ from threading import Thread
 import unittest
 
 from runtime import preparation, server
+from runtime.navigation import ProjectSession
 from runtime.projects import ProjectStore
 
 
@@ -39,6 +40,7 @@ class PreparationTests(unittest.TestCase):
         self.project, self.other = store.create(folder, "Birch")["projects"]
         self.http = server.LocalServer((server.HOST, 0), partial(server.AssetHandler, assets={}))
         self.http.projects = store
+        self.http.navigation.active = ProjectSession(self.project["key"], folder)
         self.origin = f"http://{server.HOST}:{self.http.server_port}"
         thread = Thread(target=self.http.serve_forever, args=(0.01,), daemon=True)
         thread.start()
@@ -47,7 +49,7 @@ class PreparationTests(unittest.TestCase):
         self.addCleanup(self.http.shutdown)
 
     def post(self, action, data=None, *, key=None, origin=None):
-        body = {"key": key or self.project["key"], **(data or {})}
+        body = {"key": key or self.project["key"], "session": self.http.navigation.active.id, **(data or {})}
         with closing(HTTPConnection(server.HOST, self.http.server_port, timeout=10)) as connection:
             connection.request("POST", "/api/" + action, json.dumps(body), {
                 "Origin": self.origin if origin is None else origin, "Content-Type": "application/json",
@@ -102,11 +104,15 @@ class PreparationTests(unittest.TestCase):
         original_bytes, saved_steps, result, _ = self.stored_workflow()
         self.assertEqual(original_bytes, VALID)
         self.assertEqual(json.loads(saved_steps), STEPS)
-        self.assertIsNone(self.ok("preparation", key=self.other["key"])["source"])
+        self.assertEqual(self.post("preparation", key=self.other["key"])[0], 400)
+        with self.http.projects.open_database(self.other["key"]) as (db, _, _):
+            self.assertIsNone(preparation.state(db)["source"])
 
         restarted = ProjectStore(self.app)
         self.http.projects = restarted
-        reopened = restarted.choose(self.data)["projects"][0]["key"]
+        folder = restarted.choose(self.data)
+        reopened = folder["projects"][0]["key"]
+        self.http.navigation.active = ProjectSession(reopened, folder["folder"])
         self.assertNotEqual(reopened, self.project["key"])
         self.assertEqual(self.ok("preparation", key=reopened)["source"], applied)
         self.assertEqual(self.ok("csv-page", {"view": "result", "revision": 2}, key=reopened), preview)

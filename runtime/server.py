@@ -10,12 +10,15 @@ from pathlib import Path
 import socket
 import subprocess
 import sys
+from tempfile import TemporaryDirectory
+from threading import Thread
 
 # The Windows launcher uses -I, which excludes the script directory.
 if __name__ == "__main__":
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from runtime import preparation
+from runtime.navigation import Navigation
 
 HOST = "127.0.0.1"
 PORT = 8765
@@ -49,7 +52,8 @@ def read_assets(directory):
             assets["/" + name] = content_type, path.read_bytes()
         except OSError as error:
             raise RuntimeError(f"Cannot read dist/{name}. Restore the built application files.") from error
-    assets["/"] = assets["/index.html"]
+    for route in ("/", "/launcher", "/project", "/modules/import", "/modules/preparation", "/modules/results"):
+        assets[route] = assets["/index.html"]
     return assets
 
 
@@ -88,12 +92,14 @@ class AssetHandler(BaseHTTPRequestHandler):
 
     def project_request(self, data, origin):
         store = self.server.projects
+        navigation = self.server.navigation
         key = data.get("key", "")
+        session = data.get("session")
         if not isinstance(key, str):
             raise ValueError("Invalid project reference.")
         if self.path in PREPARATION_REQUESTS:
             operation, write = PREPARATION_REQUESTS[self.path]
-            with store.open_database(key, write=write) as (db, _, _):
+            with navigation.use(session, key, write), store.open_database(key, write=write) as (db, _, _):
                 return operation(db, data)
         match self.path:
             case "/api/select-folder":
@@ -107,12 +113,23 @@ class AssetHandler(BaseHTTPRequestHandler):
                 return store.create(key, data.get("name"))
             case "/api/open":
                 store.project(key)
-                open_edge(f"{origin}/#project={key}")
+                folder = data.get("folder")
+                if not isinstance(folder, str) or key not in {item["key"] for item in store.listing(folder)["projects"]}:
+                    raise ValueError("Select a project in the current data folder.")
+                navigation.open(key, folder, origin)
+                return None
+            case "/api/session-ready":
+                navigation.ready(session, key)
+                return None
+            case "/api/session-close":
+                navigation.close(session, key)
                 return None
             case "/api/project":
-                return store.project(key)
+                with navigation.use(session, key):
+                    return store.project(key)
             case "/api/save":
-                return store.project(key, update=data)
+                with navigation.use(session, key, write=True):
+                    return store.project(key, update=data)
             case _:
                 raise ValueError("Unknown project operation.")
 
@@ -154,6 +171,10 @@ class AssetHandler(BaseHTTPRequestHandler):
 
 
 class LocalServer(ThreadingHTTPServer):
+    def __init__(self, address, handler):
+        super().__init__(address, handler)
+        self.navigation = Navigation(lambda url: open_edge(url))
+
     def server_bind(self):
         # Windows SO_REUSEADDR can let a second service bind the occupied port.
         if os.name == "nt":
@@ -182,11 +203,22 @@ def open_edge(url):
         if location in os.environ:
             edge = Path(os.environ[location]) / "Microsoft/Edge/Application/msedge.exe"
             if edge.is_file():
+                profile = TemporaryDirectory(prefix="WarehouseStudio-Edge-", ignore_cleanup_errors=True)
                 try:
-                    subprocess.Popen([str(edge), f"--app={url}"])
+                    process = subprocess.Popen([
+                        str(edge), f"--user-data-dir={profile.name}", "--guest",
+                        "--no-first-run", "--no-default-browser-check", f"--app={url}",
+                    ])
                 except OSError as error:
+                    profile.cleanup()
                     raise RuntimeError(f"Edge could not start. Check that Microsoft Edge opens normally: {error}") from error
-                return
+
+                def clean_profile():
+                    process.wait()
+                    profile.cleanup()
+
+                Thread(target=clean_profile, daemon=True).start()
+                return process
     raise RuntimeError("Microsoft Edge was not found. Check the installed Edge application and try again.")
 
 
@@ -218,7 +250,7 @@ def main():
         try:
             server = LocalServer((HOST, args.port), handler)
         except OSError as error:
-            raise RuntimeError(f"Cannot listen on {HOST}:{args.port}. Close the other service or choose a free port with --port.") from error
+            raise RuntimeError(f"Cannot listen on {HOST}:{args.port}. If Warehouse Studio is already running, return to its window and close the active project first. Otherwise close the other service or choose a free port with --port.") from error
         with server:
             server.projects = ProjectStore(DIST.parent)
             url = f"http://{HOST}:{server.server_port}/"
