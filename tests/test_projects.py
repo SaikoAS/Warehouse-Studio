@@ -14,6 +14,7 @@ import unittest
 from unittest.mock import patch
 
 from runtime import server
+from runtime.navigation import ProjectSession
 from runtime.projects import APPLICATION_ID, ProjectStore, SUFFIX, VERSION
 
 
@@ -164,11 +165,14 @@ class ProjectTests(unittest.TestCase):
                 status, listing = post("create", {"key": folder["folder"], "name": "North"})
                 self.assertEqual(status, 200)
                 project, = listing["projects"]
-                with patch.object(server, "open_edge") as edge:
-                    self.assertEqual(post("open", {"key": project["key"]}), (200, None))
-                    edge.assert_called_once_with(origin + "/#project=" + project["key"])
-                self.assertEqual(post("project", {"key": project["key"]})[1]["name"], "North")
-                status, saved = post("save", {"key": project["key"], "revision": 1, "name": "North saved"})
+                with patch.object(http.navigation, "open") as open_project:
+                    self.assertEqual(post("open", {"key": project["key"], "folder": folder["folder"]}), (200, None))
+                    open_project.assert_called_once_with(project["key"], folder["folder"], origin)
+                self.assertEqual(post("project", {"key": project["key"]})[0], 400)
+                http.navigation.active = ProjectSession(project["key"], folder["folder"])
+                reference = {"key": project["key"], "session": http.navigation.active.id}
+                self.assertEqual(post("project", reference)[1]["name"], "North")
+                status, saved = post("save", {**reference, "revision": 1, "name": "North saved"})
                 self.assertEqual((status, saved["revision"]), (200, 2))
                 self.assertEqual(post("list", {"key": folder["folder"]})[1]["projects"][0]["name"], "North saved")
                 (self.data / project["file"]).unlink()

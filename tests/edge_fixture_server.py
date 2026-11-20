@@ -4,6 +4,7 @@ from functools import partial
 from pathlib import Path
 from subprocess import Popen
 import sys
+from threading import Event
 from unittest.mock import patch
 
 
@@ -14,11 +15,41 @@ from runtime import server
 from runtime.projects import ProjectStore
 
 
-def serve(projects, fragment=""):
-    handler = partial(server.AssetHandler, assets=server.read_assets(ROOT / "dist"))
+class FixtureProcess:
+    def __init__(self):
+        self.closed = Event()
+
+    def wait(self):
+        self.closed.wait()
+        return 0
+
+    def poll(self):
+        return 0 if self.closed.is_set() else None
+
+    def terminate(self):
+        self.closed.set()
+
+
+class FixtureHandler(server.AssetHandler):
+    def project_request(self, data, origin):
+        if self.path == "/api/fixture-project-ended":
+            self.server.browser.terminate()
+            return None
+        return super().project_request(data, origin)
+
+
+def serve(projects):
+    handler = partial(FixtureHandler, assets=server.read_assets(ROOT / "dist"))
     with server.LocalServer((server.HOST, 0), handler) as http:
         http.projects = projects
-        print(f"http://{server.HOST}:{http.server_port}/{fragment}", flush=True)
+
+        def launch(url):
+            http.browser = FixtureProcess()
+            print(url, flush=True)
+            return http.browser
+
+        http.navigation.launch = launch
+        print(f"http://{server.HOST}:{http.server_port}/", flush=True)
         http.serve_forever()
 
 
@@ -33,11 +64,10 @@ def start_picker_without_tk(args, *popen_args, **options):
 if __name__ == "__main__":
     projects = ProjectStore(ROOT)
     folder = projects.choose(Path(sys.argv[1]))["folder"]
-    project, = projects.create(folder, "Existing local project")["projects"]
+    projects.create(folder, "Existing local project")
     if sys.argv[2:] == ["--launcher"]:
         # Use the actual picker script with an unavailable Tk module. Edge uses its test profile.
-        with (patch.object(server.subprocess, "Popen", new=start_picker_without_tk),
-              patch.object(server, "open_edge", side_effect=lambda url: print(url, flush=True))):
+        with patch.object(server.subprocess, "Popen", new=start_picker_without_tk):
             serve(projects)
     else:
-        serve(projects, f"#project={project['key']}")
+        serve(projects)

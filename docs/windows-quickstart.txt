@@ -1,5 +1,5 @@
-Warehouse Studio v0.1.1
-=======================
+Warehouse Studio for Windows
+============================
 
 Use Windows with Microsoft Edge and an approved Python 3.13 or newer with
 standard-library sqlite3 already available. Extract the whole ZIP into a local
@@ -9,10 +9,15 @@ folder you can write to. Start from the extracted folder.
 2. In File Explorer, copy the absolute path to a writable local data folder
    outside the extracted application. Paste it into Project folder path and
    select Use folder. The optional Browse button uses Tk when available.
-3. Create or open a project. Each project opens in its own Edge window and saves
-   its data into a .warehouse.sqlite3 file in the selected data folder.
-4. Import a UTF-8, semicolon-delimited CSV. Add preparation steps and use Apply
-   to save the result. Reopen the project to inspect the saved result.
+3. Create or open a project. The launcher closes when the project is ready.
+   Warehouse Studio supports one active project and stores its data in a
+   .warehouse.sqlite3 file in the selected data folder.
+4. Open Import, Data preparation or Results from the project window. Each opens
+   in its own Edge window. Select a module again to bring its window forward.
+5. Import a UTF-8, semicolon-delimited CSV. Add steps in Data preparation and
+   use Apply to save the result. Results displays the saved output.
+6. Choose Close project to close the project and its modules and return to the
+   launcher. If a module has unsaved changes, you can cancel the close.
 
 Keep the start window open while using Warehouse Studio. Press Ctrl+C there to
 stop the local service.

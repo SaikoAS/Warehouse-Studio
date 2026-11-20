@@ -30,7 +30,47 @@ export async function withEdgeTestService(args, exercise) {
     const origin = new URL(url).origin;
     await context.route("**/*", route =>
       new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
-    await exercise({ directory, url, nextUrl, context });
+    const host = await context.newPage();
+    await host.goto(url);
+    async function openApp(destination) {
+      const opened = host.waitForEvent("popup");
+      await host.evaluate(next => { window.open(next, "_blank", "popup"); }, destination);
+      return opened;
+    }
+    async function openProject(launcher, name = "Existing local project") {
+      const destination = nextUrl();
+      const closed = launcher.waitForEvent("close");
+      await launcher.getByRole("button", { name: `Open project ${name}` }).click();
+      const project = await openApp(await destination);
+      await project.getByRole("heading", { name, exact: true }).waitFor();
+      await closed;
+      return project;
+    }
+    async function openLauncher() {
+      const launcher = await openApp(url);
+      await launcher.getByLabel("Project folder path").fill(directory);
+      await launcher.getByRole("button", { name: "Use folder" }).click();
+      return launcher;
+    }
+    async function openModule(project, name) {
+      const popup = project.waitForEvent("popup");
+      await project.getByRole("button", { name, exact: true }).click();
+      const module = await popup;
+      await module.getByRole("heading", { name, exact: true }).waitFor();
+      return module;
+    }
+    async function closeProject(project) {
+      const closed = project.waitForEvent("close");
+      const destination = nextUrl();
+      await project.getByRole("button", { name: "Close project", exact: true }).click();
+      await closed;
+      const ended = await context.request.post(new URL("/api/fixture-project-ended", url).href, {
+        data: {}, headers: { Origin: origin },
+      });
+      if (!ended.ok()) throw new Error("Failed to signal the fake Edge process exit.");
+      return openApp(await destination);
+    }
+    await exercise({ directory, url, context, openApp, openProject, openLauncher, openModule, closeProject });
   } finally {
     await browser?.close();
     stdout.close();

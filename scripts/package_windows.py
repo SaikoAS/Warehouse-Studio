@@ -21,6 +21,7 @@ FILES = {
     "licenses/react.txt": "node_modules/react/LICENSE",
     "licenses/scheduler.txt": "node_modules/scheduler/LICENSE",
     "runtime/choose_folder.py": "runtime/choose_folder.py",
+    "runtime/navigation.py": "runtime/navigation.py",
     "runtime/preparation.py": "runtime/preparation.py",
     "runtime/projects.py": "runtime/projects.py",
     "runtime/server.py": "runtime/server.py",
